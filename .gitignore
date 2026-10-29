@@ -1,0 +1,17 @@
+node_modules/
+.next/
+dist/
+coverage/
+*.tsbuildinfo
+.env
+.env.*
+!.env.example
+# private uploads (payment proofs, shipping labels) — never commit
+storage/
+apps/api/storage/
+.dev-postgres/
+playwright-report/
+test-results/
+*.log
+release/
+

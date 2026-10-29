@@ -1,0 +1,47 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --font-serif: 'Newsreader', Georgia, 'Times New Roman', serif;
+  --font-sans: 'Plus Jakarta Sans', system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  --color-background: #f9f9f8;
+  --color-text: #1a1c1c;
+  --color-surface: #ffffff;
+  --color-surface-low: #f3f4f3;
+  --color-surface-high: #e8e8e7;
+  --color-border: #c5c6ca;
+  --color-ink-muted: #5d5e61;
+  --color-accent: #fece57;
+  --color-accent-soft: #ffdf98;
+  --color-evergreen: #15221e;
+  --color-evergreen-soft: #d6e6df;
+  --color-success: #187f58;
+  --color-danger: #ba1a1a;
+}
+
+html,
+body {
+  background-color: var(--color-background);
+  color: var(--color-text);
+  font-feature-settings: 'cv02', 'cv03', 'cv04', 'cv11';
+  -webkit-font-smoothing: antialiased;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}
+
+/* Accessible keyboard focus ring */
+:focus-visible {
+  outline: 2px solid #15221e;
+  outline-offset: 2px;
+}
+

@@ -1,0 +1,4 @@
+sku,name,slug,category,description,sale_price,compare_at_price,currency,weight_gram,stock_qty,supplier_name,supplier_sku,warehouse_name,cost_price,supplier_product_url,image_url,cod_enabled,status
+DRP-001,Contoh Botol Minum,contoh-botol-minum,Perlengkapan Rumah,"Produk demo untuk menguji import CSV; ganti dengan barang yang benar",79000,,IDR,350,12,Supplier Contoh,SRC-001,Gudang Surabaya,42000,https://supplier.example/product/DRP-001,https://images.example/DRP-001.jpg,false,DRAFT
+DRP-002,Contoh Headphone,contoh-headphone,Elektronik,"Baris demo; URL example tidak digunakan untuk transaksi",249000,299000,IDR,600,8,Supplier Contoh,SRC-002,Gudang Bandung,175000,https://supplier.example/product/DRP-002,https://images.example/DRP-002.jpg,true,DRAFT
+

@@ -1,0 +1,52 @@
+{
+  "name": "dropship-store",
+  "private": true,
+  "version": "1.0.0",
+  "description": "Toko dropship multi-supplier: Next.js storefront + NestJS API + PostgreSQL/Prisma",
+  "engines": {
+    "node": ">=20.11 <23"
+  },
+  "packageManager": "npm@10.9.0",
+  "workspaces": [
+    "packages/*",
+    "apps/*"
+  ],
+  "prisma": {
+    "schema": "prisma/schema.prisma",
+    "seed": "tsx prisma/seed.ts"
+  },
+  "scripts": {
+    "dev": "node scripts/start-all.mjs",
+    "build:shared": "npm run build -w @store/shared",
+    "build": "npm run build:shared && npm run build -w @store/api && npm run build -w @store/web",
+    "dev:api": "npm run dev -w @store/api",
+    "dev:web": "npm run dev -w @store/web",
+    "dev:db": "node scripts/dev-db.mjs",
+    "db:generate": "prisma generate",
+    "db:migrate": "prisma migrate deploy",
+    "db:migrate:dev": "prisma migrate dev",
+    "db:seed": "tsx prisma/seed.ts",
+    "db:reset": "prisma migrate reset --force",
+    "admin:create": "tsx scripts/create-admin.ts",
+    "lint": "npm run lint -w @store/shared && npm run lint -w @store/api && npm run lint -w @store/web",
+    "typecheck": "tsc -p tsconfig.json --noEmit && npm run typecheck -w @store/shared && npm run typecheck -w @store/api && npm run typecheck -w @store/web",
+    "test": "npm run test -w @store/shared && npm run test -w @store/api",
+    "test:e2e": "npm run test:e2e -w @store/web",
+    "format": "prettier --write \"**/*.{ts,tsx,js,json,md,css}\"",
+    "format:check": "prettier --check \"**/*.{ts,tsx,js,json,css}\""
+  },
+  "devDependencies": {
+    "@types/node": "^22.9.0",
+    "embedded-postgres": "^17.2.0-beta.15",
+    "prettier": "^3.3.3",
+    "prisma": "^5.22.0",
+    "tsx": "^4.19.2",
+    "typescript": "^5.6.3"
+  },
+  "dependencies": {
+    "@prisma/client": "^5.22.0",
+    "bcryptjs": "^2.4.3",
+    "dotenv": "^16.4.5"
+  }
+}
+
