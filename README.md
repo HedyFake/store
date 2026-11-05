@@ -173,3 +173,4 @@ npm run build
 #   s t o r e  
  # store
 # store
+"# store2" 
