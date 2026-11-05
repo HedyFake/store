@@ -526,11 +526,44 @@ export class CatalogController {
       });
 
       const stockToCreate = data.initialStockQty !== undefined ? data.initialStockQty : 25;
-      const defaultWarehouse = await tx.warehouse.findFirst({
+      let defaultWarehouse = await tx.warehouse.findFirst({
         where: { active: true, supplier: { active: true } },
         include: { supplier: true },
         orderBy: { createdAt: 'asc' },
       });
+      if (!defaultWarehouse) {
+        const fallbackSupplier = await tx.supplier.upsert({
+          where: { name: 'Mitra Utama Pasti Murahnya' },
+          create: {
+            name: 'Mitra Utama Pasti Murahnya',
+            publicLabel: 'Gudang Utama Pasti Murahnya',
+            active: true,
+            integrationMode: 'MANUAL',
+            codSupported: true,
+            contactPhone: '6285141784243',
+          },
+          update: { active: true },
+        });
+        defaultWarehouse = await tx.warehouse.upsert({
+          where: {
+            supplierId_name: {
+              supplierId: fallbackSupplier.id,
+              name: 'Gudang Utama Jakarta Selatan',
+            },
+          },
+          create: {
+            supplierId: fallbackSupplier.id,
+            name: 'Gudang Utama Jakarta Selatan',
+            city: 'Jakarta Selatan',
+            province: 'DKI Jakarta',
+            address: 'Jakarta Selatan, DKI Jakarta',
+            shippingOriginId: '17473',
+            active: true,
+          },
+          update: { active: true },
+          include: { supplier: true },
+        });
+      }
       if (defaultWarehouse) {
         const offerCost = data.costPrice && data.costPrice > 0 ? data.costPrice : Math.round(prod.salePrice * 0.7);
         const offer = await tx.supplierOffer.create({
@@ -682,11 +715,44 @@ export class CatalogController {
             });
           }
         } else {
-          const defaultWarehouse = await tx.warehouse.findFirst({
+          let defaultWarehouse = await tx.warehouse.findFirst({
             where: { active: true, supplier: { active: true } },
             include: { supplier: true },
             orderBy: { createdAt: 'asc' },
           });
+          if (!defaultWarehouse) {
+            const fallbackSupplier = await tx.supplier.upsert({
+              where: { name: 'Mitra Utama Pasti Murahnya' },
+              create: {
+                name: 'Mitra Utama Pasti Murahnya',
+                publicLabel: 'Gudang Utama Pasti Murahnya',
+                active: true,
+                integrationMode: 'MANUAL',
+                codSupported: true,
+                contactPhone: '6285141784243',
+              },
+              update: { active: true },
+            });
+            defaultWarehouse = await tx.warehouse.upsert({
+              where: {
+                supplierId_name: {
+                  supplierId: fallbackSupplier.id,
+                  name: 'Gudang Utama Jakarta Selatan',
+                },
+              },
+              create: {
+                supplierId: fallbackSupplier.id,
+                name: 'Gudang Utama Jakarta Selatan',
+                city: 'Jakarta Selatan',
+                province: 'DKI Jakarta',
+                address: 'Jakarta Selatan, DKI Jakarta',
+                shippingOriginId: '17473',
+                active: true,
+              },
+              update: { active: true },
+              include: { supplier: true },
+            });
+          }
           if (defaultWarehouse) {
             const stockToSet = data.initialStockQty ?? 25;
             const costToSet =

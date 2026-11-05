@@ -175,6 +175,7 @@ export interface StoreConfigResponse {
   shipping: {
     provider: 'rajaongkir' | 'flat';
     freeShippingMinSubtotal: number;
+    minProfitPerOrder?: number;
   };
   legal: Array<{
     slug: string;

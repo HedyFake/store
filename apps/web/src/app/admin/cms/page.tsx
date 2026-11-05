@@ -448,7 +448,7 @@ export default function AdminCmsPage() {
                 <span className="w-2.5 h-2.5 rounded-full bg-success/70" />
               </div>
               <div className="flex-1 bg-surface rounded-md px-3 py-1 text-[11px] text-ink-muted font-mono text-center">
-                {config?.store.storeName.toLowerCase().replace(/\s+/g, '') || 'store'}.local
+                https://pastimurahnya.my.id
               </div>
             </div>
 

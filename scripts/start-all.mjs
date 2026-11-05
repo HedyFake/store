@@ -17,6 +17,13 @@ if (fs.existsSync(envPath)) {
   dotenv.config({ path: envPath });
 }
 
+if (!process.env.DATABASE_URL) {
+  process.env.DATABASE_URL = 'postgresql://postgres:postgres@127.0.0.1:5433/dropship_store?schema=public';
+}
+if (!process.env.AUTH_SECRET) {
+  process.env.AUTH_SECRET = 'dev_local_secret_958afac6fbe14940a0b9c3611da09843_change_in_prod';
+}
+
 // Pastikan selalu menggunakan binary Node.js yang benar dan bukan path kosong di Program Files
 const portableNodeDir = 'C:\\Users\\wibyj\\tools\\node-v22.11.0-win-x64';
 const portableNodeExe = path.join(portableNodeDir, 'node.exe');
@@ -64,8 +71,32 @@ const npmCmd = process.platform === 'win32' ? 'npm.cmd' : 'npm';
 const npxCmd = process.platform === 'win32' ? 'npx.cmd' : 'npx';
 const dbDir = path.join(os.tmpdir(), 'pastimurahnya-dev-pg');
 const forceDev = process.argv.includes('--dev');
+const isLinuxRoot = process.platform !== 'win32' && typeof process.getuid === 'function' && process.getuid() === 0;
+
+if (
+  isLinuxRoot &&
+  (process.env.DATABASE_URL?.includes('127.0.0.1:5433') ||
+    process.env.DATABASE_URL?.includes('localhost:5433'))
+) {
+  // PostgreSQL binary refuses to run embedded-postgres as UID 0 (root) on Ubuntu/Linux.
+  // Automatically switch to local system PostgreSQL service on port 5432.
+  process.env.DATABASE_URL =
+    'postgresql://postgres:postgres@127.0.0.1:5432/dropship_store?schema=public';
+  childEnv.DATABASE_URL = process.env.DATABASE_URL;
+  try {
+    execSync('systemctl start postgresql || service postgresql start', { stdio: 'ignore' });
+    execSync(
+      `su - postgres -c "psql -tc \\"SELECT 1 FROM pg_database WHERE datname = 'dropship_store'\\" | grep -q 1 || psql -c \\"ALTER USER postgres WITH PASSWORD 'postgres'; CREATE DATABASE dropship_store;\\""`,
+      { stdio: 'ignore' },
+    );
+  } catch {
+    // ignore if already configured
+  }
+}
+
 const dbUrl = process.env.DATABASE_URL || 'postgresql://postgres:postgres@127.0.0.1:5433/dropship_store';
-const useEmbeddedPg = dbUrl.includes('127.0.0.1:5433') || dbUrl.includes('localhost:5433');
+const useEmbeddedPg =
+  !isLinuxRoot && (dbUrl.includes('127.0.0.1:5433') || dbUrl.includes('localhost:5433'));
 
 let pg = null;
 if (useEmbeddedPg) {

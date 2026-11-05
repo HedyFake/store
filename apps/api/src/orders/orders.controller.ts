@@ -666,7 +666,7 @@ export class OrdersController {
 
     const storeCfg = await this.settings.get('store', {
       storeName: 'Pasti Murahnya',
-      whatsappNumber: '6282233038659',
+      whatsappNumber: '6285141784243',
     });
 
     let shipment = so.shipments[0];

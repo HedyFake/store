@@ -288,7 +288,7 @@ export default function AdminSettingsPage() {
                 setData({ ...data, store: { ...data.store, supportEmail: e.target.value } })
               }
               className="w-full h-9 px-3 rounded-lg bg-surface-low border border-border/60"
-              placeholder="halo@pastimurahnya.id"
+              placeholder="pastimurahnya12@gmail.com"
             />
           </div>
           <div>

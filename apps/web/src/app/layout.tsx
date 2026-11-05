@@ -3,6 +3,7 @@ import './globals.css';
 import { StoreProvider } from '@/components/store-provider';
 
 export const metadata: Metadata = {
+  metadataBase: new URL(process.env.NEXT_PUBLIC_SITE_URL || 'https://pastimurahnya.my.id'),
   title: 'Pasti Murahnya — Pasti Murah, Pasti Puas! | Belanja Hemat, Tanpa Ragu',
   description:
     'Pastimurah menyediakan berbagai kebutuhan dengan harga terjangkau tanpa mengorbankan kualitas. Belanja mudah, pelayanan ramah, dan harganya pasti murah.',

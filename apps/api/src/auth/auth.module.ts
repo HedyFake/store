@@ -221,17 +221,24 @@ export class AuthController {
       ip: req.ip,
       userAgent: req.headers['user-agent'],
     });
-    const isProd = env().NODE_ENV === 'production';
+    const protoHeader = String(req.headers['x-forwarded-proto'] || '')
+      .split(',')[0]
+      .trim()
+      .toLowerCase();
+    const originOrReferer = String(req.headers.origin || req.headers.referer || '').toLowerCase();
+    const isHttps = Boolean(
+      req.secure || protoHeader === 'https' || originOrReferer.startsWith('https://'),
+    );
     res.cookie(SESSION_COOKIE, result.rawToken, {
       httpOnly: true,
-      secure: isProd,
+      secure: isHttps,
       sameSite: 'lax',
       expires: result.expiresAt,
       path: '/',
     });
     res.cookie(CSRF_COOKIE, result.csrfToken, {
       httpOnly: false,
-      secure: isProd,
+      secure: isHttps,
       sameSite: 'lax',
       expires: result.expiresAt,
       path: '/',
