@@ -29,44 +29,80 @@ const nodeBin = fs.existsSync(portableNodeExe)
 const childEnv = {
   ...process.env,
   PATH: fs.existsSync(portableNodeDir)
-    ? `${portableNodeDir};${process.env.PATH || ''}`
+    ? `${portableNodeDir}${path.delimiter}${process.env.PATH || ''}`
     : process.env.PATH,
 };
 
+function freePort(port) {
+  try {
+    if (process.platform === 'win32') {
+      const out = execSync(`netstat -ano | findstr :${port}`, { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] });
+      const pids = new Set();
+      for (const line of out.split(/\r?\n/)) {
+        const trimmed = line.trim();
+        if (!trimmed.includes('LISTENING')) continue;
+        const parts = trimmed.split(/\s+/);
+        const pid = Number(parts[parts.length - 1]);
+        if (pid && pid !== process.pid) pids.add(pid);
+      }
+      for (const pid of pids) {
+        try {
+          execSync(`taskkill /F /PID ${pid}`, { stdio: 'ignore' });
+        } catch {
+          // ignore
+        }
+      }
+    } else {
+      execSync(`fuser -k ${port}/tcp`, { stdio: 'ignore' });
+    }
+  } catch {
+    // Port sudah kosong
+  }
+}
+
+const npmCmd = process.platform === 'win32' ? 'npm.cmd' : 'npm';
+const npxCmd = process.platform === 'win32' ? 'npx.cmd' : 'npx';
 const dbDir = path.join(os.tmpdir(), 'pastimurahnya-dev-pg');
 const forceDev = process.argv.includes('--dev');
+const dbUrl = process.env.DATABASE_URL || 'postgresql://postgres:postgres@127.0.0.1:5433/dropship_store';
+const useEmbeddedPg = dbUrl.includes('127.0.0.1:5433') || dbUrl.includes('localhost:5433');
 
-console.log('1/3 Menyalakan database PostgreSQL lokal (port 5433)...');
-const pg = new EmbeddedPostgres({
-  databaseDir: dbDir,
-  user: 'postgres',
-  password: 'postgres',
-  port: 5433,
-  persistent: true,
-});
+let pg = null;
+if (useEmbeddedPg) {
+  console.log('1/3 Menyalakan database PostgreSQL lokal (port 5433)...');
+  pg = new EmbeddedPostgres({
+    databaseDir: dbDir,
+    user: 'postgres',
+    password: 'postgres',
+    port: 5433,
+    persistent: true,
+  });
 
-try {
-  await pg.initialise();
-} catch {
-  // Sudah diinisialisasi
+  try {
+    await pg.initialise();
+  } catch {
+    // Sudah diinisialisasi
+  }
+  try {
+    await pg.start();
+  } catch {
+    // Mungkin sudah berjalan
+  }
+  try {
+    await pg.createDatabase('dropship_store');
+  } catch {
+    // Database sudah ada
+  }
+  console.log('✓ Database aktif di postgresql://postgres:postgres@127.0.0.1:5433/dropship_store');
+} else {
+  console.log('1/3 Menggunakan database PostgreSQL eksternal dari DATABASE_URL...');
 }
-try {
-  await pg.start();
-} catch {
-  // Mungkin sudah berjalan
-}
-try {
-  await pg.createDatabase('dropship_store');
-} catch {
-  // Database sudah ada
-}
-console.log('✓ Database aktif di postgresql://postgres:postgres@127.0.0.1:5433/dropship_store');
 
 // Pastikan skema database & akun admin utama selalu tersinkronisasi dengan .env
 const syncOnly = process.argv.includes('--sync-only');
 if (syncOnly) {
-  execSync('npx.cmd prisma db push --accept-data-loss', { cwd: rootDir, stdio: 'inherit', env: childEnv });
-  execSync('npx.cmd prisma generate', { cwd: rootDir, stdio: 'inherit', env: childEnv });
+  execSync(`${npxCmd} prisma db push --accept-data-loss`, { cwd: rootDir, stdio: 'inherit', env: childEnv });
+  execSync(`${npxCmd} prisma generate`, { cwd: rootDir, stdio: 'inherit', env: childEnv });
 }
 try {
   const prisma = new PrismaClient();
@@ -184,20 +220,44 @@ try {
   await prisma.$disconnect();
   console.log(`✓ Akun Admin aktif: ${adminEmail} | WA: +6285141784243 | Email: pastimurahnya12@gmail.com | IG: @pastimurahnya.my.id`);
 } catch (err) {
-  console.warn('Info sinkronisasi admin:', err instanceof Error ? err.message : err);
+  const msg = err instanceof Error ? err.message : String(err);
+  if (msg.includes('does not exist')) {
+    console.log('Inisialisasi tabel database baru & data awal...');
+    try {
+      execSync(`${npxCmd} prisma db push --accept-data-loss`, { cwd: rootDir, stdio: 'inherit', env: childEnv });
+      execSync(`${npmCmd} run db:seed`, { cwd: rootDir, stdio: 'inherit', env: childEnv });
+    } catch (seedErr) {
+      console.warn('Info inisialisasi DB:', seedErr instanceof Error ? seedErr.message : seedErr);
+    }
+  } else {
+    console.warn('Info sinkronisasi admin:', msg);
+  }
 }
 
 if (syncOnly) {
   try {
-    await pg.stop();
+    if (pg) await pg.stop();
   } catch {
     // ignore
   }
   process.exit(0);
 }
 
-console.log('2/3 Menyalakan Backend API (http://localhost:4000)...');
+// Bebaskan port 4000 & 3000 jika masih dipakai oleh proses sebelumnya (mencegah EADDRINUSE)
+freePort(4000);
+freePort(3000);
+
 const apiMain = path.join(rootDir, 'apps', 'api', 'dist', 'main.js');
+if (!fs.existsSync(apiMain)) {
+  console.log('Membangun paket @store/shared dan @store/api...');
+  execSync(`${npmCmd} run build:shared && ${npmCmd} run build -w @store/api`, {
+    cwd: rootDir,
+    stdio: 'inherit',
+    env: childEnv,
+  });
+}
+
+console.log('2/3 Menyalakan Backend API (http://localhost:4000)...');
 const apiProc = spawn(nodeBin, [apiMain], {
   cwd: path.join(rootDir, 'apps', 'api'),
   stdio: 'inherit',
