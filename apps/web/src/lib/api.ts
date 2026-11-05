@@ -14,38 +14,88 @@ export class ApiError extends Error {
   }
 }
 
+const clientGetCache = new Map<string, { data: unknown; expiresAt: number }>();
+const inFlightGet = new Map<string, Promise<unknown>>();
+
+function isCacheablePublicGet(path: string, method: string): boolean {
+  if (method !== 'GET') return false;
+  return (
+    path === '/api/store-config' ||
+    path === '/api/categories' ||
+    path.startsWith('/api/products') ||
+    path.startsWith('/api/shipping/destinations')
+  );
+}
+
+export function clearApiCache(): void {
+  clientGetCache.clear();
+}
+
 export async function apiFetch<T>(path: string, init: RequestInit = {}): Promise<T> {
-  const headers = new Headers(init.headers);
-  if (!(init.body instanceof FormData) && !headers.has('Content-Type')) {
-    headers.set('Content-Type', 'application/json');
-  }
-  const csrf = readCookie('store_csrf');
-  if (csrf && !headers.has('x-csrf-token')) {
-    headers.set('x-csrf-token', csrf);
+  const method = (init.method || 'GET').toUpperCase();
+  const cacheable = isCacheablePublicGet(path, method);
+
+  if (cacheable) {
+    const cached = clientGetCache.get(path);
+    if (cached && cached.expiresAt > Date.now()) {
+      return cached.data as T;
+    }
+    const existingFlight = inFlightGet.get(path);
+    if (existingFlight) {
+      return existingFlight as Promise<T>;
+    }
   }
 
-  const res = await fetch(path, {
-    ...init,
-    headers,
-    credentials: 'include',
-    cache: 'no-store',
-  });
+  const execute = async (): Promise<T> => {
+    const headers = new Headers(init.headers);
+    if (!(init.body instanceof FormData) && !headers.has('Content-Type')) {
+      headers.set('Content-Type', 'application/json');
+    }
+    const csrf = readCookie('store_csrf');
+    if (csrf && !headers.has('x-csrf-token')) {
+      headers.set('x-csrf-token', csrf);
+    }
 
-  const isJson = (res.headers.get('content-type') || '').includes('application/json');
-  const body = isJson ? await res.json().catch(() => null) : await res.text().catch(() => null);
+    const res = await fetch(path, {
+      ...init,
+      headers,
+      credentials: 'include',
+      cache: 'no-store',
+    });
 
-  if (!res.ok) {
-    const msg =
-      (body && typeof body === 'object' && ('message' in body || 'error' in body)
-        ? String((body as { message?: unknown; error?: unknown }).message || (body as { error?: unknown }).error)
-        : null) || `Permintaan gagal (HTTP ${res.status})`;
-    const issues =
-      body && typeof body === 'object' && Array.isArray((body as { issues?: unknown }).issues)
-        ? ((body as { issues: Array<{ path: string; message: string }> }).issues)
-        : undefined;
-    throw new ApiError(msg, res.status, issues);
+    const isJson = (res.headers.get('content-type') || '').includes('application/json');
+    const body = isJson ? await res.json().catch(() => null) : await res.text().catch(() => null);
+
+    if (!res.ok) {
+      const msg =
+        (body && typeof body === 'object' && ('message' in body || 'error' in body)
+          ? String((body as { message?: unknown; error?: unknown }).message || (body as { error?: unknown }).error)
+          : null) || `Permintaan gagal (HTTP ${res.status})`;
+      const issues =
+        body && typeof body === 'object' && Array.isArray((body as { issues?: unknown }).issues)
+          ? ((body as { issues: Array<{ path: string; message: string }> }).issues)
+          : undefined;
+      throw new ApiError(msg, res.status, issues);
+    }
+
+    if (cacheable) {
+      clientGetCache.set(path, { data: body, expiresAt: Date.now() + 12_000 });
+    } else if (method !== 'GET') {
+      clientGetCache.clear();
+    }
+
+    return body as T;
+  };
+
+  if (cacheable) {
+    const promise = execute().finally(() => {
+      inFlightGet.delete(path);
+    });
+    inFlightGet.set(path, promise);
+    return promise;
   }
-  return body as T;
+
+  return execute();
 }
 
 export interface PublicProduct {
@@ -56,6 +106,7 @@ export interface PublicProduct {
   description: string;
   salePrice: number;
   compareAtPrice: number | null;
+  shippingSubsidy?: number;
   currency: string;
   weightGram: number;
   highlights: string[];

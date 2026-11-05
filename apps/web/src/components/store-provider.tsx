@@ -52,6 +52,7 @@ const StoreContext = createContext<StoreContextValue | null>(null);
 const CART_STORAGE_KEY = 'store_cart_v1';
 const WISHLIST_STORAGE_KEY = 'store_wishlist_v1';
 const ORDERS_STORAGE_KEY = 'store_recent_orders_v1';
+const CONFIG_STORAGE_KEY = 'store_config_cache_v1';
 
 export function StoreProvider({ children }: { children: React.ReactNode }) {
   const [config, setConfig] = useState<StoreConfigResponse | null>(null);
@@ -73,14 +74,20 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
     try {
       const data = await apiFetch<StoreConfigResponse>('/api/store-config');
       setConfig(data);
+      try {
+        localStorage.setItem(CONFIG_STORAGE_KEY, JSON.stringify(data));
+      } catch {
+        /* ignore */
+      }
     } catch {
       /* offline or API booting */
     }
   }, []);
 
   useEffect(() => {
-    void refreshConfig();
     try {
+      const savedConfig = localStorage.getItem(CONFIG_STORAGE_KEY);
+      if (savedConfig) setConfig(JSON.parse(savedConfig));
       const savedCart = localStorage.getItem(CART_STORAGE_KEY);
       if (savedCart) setCart(JSON.parse(savedCart));
       const savedWish = localStorage.getItem(WISHLIST_STORAGE_KEY);
@@ -92,6 +99,7 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
     } finally {
       setHydrated(true);
     }
+    void refreshConfig();
   }, [refreshConfig]);
 
   useEffect(() => {

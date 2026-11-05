@@ -12,11 +12,19 @@ import {
   UseGuards,
 } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
-import { catalogQuerySchema, categorySchema, productSchema } from '@store/shared';
+import {
+  catalogQuerySchema,
+  categorySchema,
+  evaluateProductProfitAndSubsidy,
+  productSchema,
+  profitPreviewRequestSchema,
+} from '@store/shared';
 import { PrismaService } from '../prisma/prisma.service';
 import { AuditService } from '../audit/audit.service';
 import { AdminGuard, AuthedUser, CurrentUser, Roles } from '../auth/auth.module';
 import { parseOrThrow } from '../common/zod.pipe';
+import { ShippingService } from '../shipping/shipping.service';
+import { DEFAULT_SHIPPING_SETTINGS, SettingsService } from '../settings/settings.controller';
 
 /** Format a product for public storefront responses — never exposes supplier cost or internal notes. */
 function formatPublicProduct(
@@ -44,6 +52,7 @@ function formatPublicProduct(
     description: p.description,
     salePrice: p.salePrice,
     compareAtPrice: p.compareAtPrice,
+    shippingSubsidy: p.shippingSubsidy ?? 0,
     currency: p.currency,
     weightGram: p.weightGram,
     highlights: p.highlights,
@@ -51,7 +60,10 @@ function formatPublicProduct(
     featured: p.featured,
     isDemo: p.isDemo,
     category: p.category ? { id: p.category.id, name: p.category.name, slug: p.category.slug } : null,
-    images: p.images.sort((a, b) => a.sortOrder - b.sortOrder).map((img) => ({ id: img.id, url: img.url, alt: img.alt })),
+    images: p.images
+      .sort((a, b) => a.sortOrder - b.sortOrder)
+      .slice(0, 3)
+      .map((img) => ({ id: img.id, url: img.url, alt: img.alt })),
     variants: p.variants
       .filter((v) => v.active)
       .sort((a, b) => a.sortOrder - b.sortOrder)
@@ -85,6 +97,8 @@ export class CatalogController {
   constructor(
     private readonly prisma: PrismaService,
     private readonly audit: AuditService,
+    private readonly shipping: ShippingService,
+    private readonly settings: SettingsService,
   ) {}
 
   // ─────────────────────── Public catalog ───────────────────────
@@ -360,7 +374,101 @@ export class CatalogController {
       },
     });
     if (!p) throw new NotFoundException('Produk tidak ditemukan');
-    return p;
+    const primaryOfferCost = p.offers.find((o) => o.active)?.costPrice ?? p.offers[0]?.costPrice ?? 0;
+    return {
+      ...p,
+      costPrice: p.costPrice > 0 ? p.costPrice : primaryOfferCost,
+    };
+  }
+
+  @UseGuards(AdminGuard)
+  @Post('admin/products/profit-preview')
+  async previewProductProfit(@Body() body: unknown) {
+    const input = parseOrThrow(profitPreviewRequestSchema, body);
+    const shippingCfg = await this.settings.get('shipping', DEFAULT_SHIPPING_SETTINGS);
+    const minProfitTarget = input.minProfitTarget ?? shippingCfg.minProfitPerOrder ?? 15000;
+
+    let resolvedOriginId = input.originId || null;
+    let resolvedOriginCity = 'Jakarta Selatan';
+    let resolvedCostPrice = input.costPrice;
+
+    if (input.productId) {
+      const existing = await this.prisma.product.findUnique({
+        where: { id: input.productId },
+        include: {
+          offers: {
+            where: { active: true },
+            include: { warehouse: true },
+            orderBy: { fulfillmentPriority: 'asc' },
+          },
+        },
+      });
+      if (existing) {
+        if (resolvedCostPrice <= 0) {
+          resolvedCostPrice = existing.costPrice > 0 ? existing.costPrice : (existing.offers[0]?.costPrice ?? 0);
+        }
+        if (!resolvedOriginId && existing.offers[0]?.warehouse?.shippingOriginId) {
+          resolvedOriginId = existing.offers[0].warehouse.shippingOriginId;
+          resolvedOriginCity = existing.offers[0].warehouse.city;
+        }
+      }
+    }
+
+    if (!resolvedOriginId) {
+      const defaultWh = await this.prisma.warehouse.findFirst({
+        where: { active: true, shippingOriginId: { not: null } },
+        orderBy: { createdAt: 'asc' },
+      });
+      if (defaultWh?.shippingOriginId) {
+        resolvedOriginId = defaultWh.shippingOriginId;
+        resolvedOriginCity = defaultWh.city;
+      } else {
+        resolvedOriginId = '17473';
+      }
+    }
+
+    const options = await this.shipping.quoteGroup({
+      originId: resolvedOriginId,
+      originCity: resolvedOriginCity,
+      destinationId: input.destinationId || '17473',
+      weightGram: Math.max(1, input.weightGram || 500),
+    });
+
+    const mappedRates = options.map((opt) => ({
+      optionId: opt.optionId,
+      courierCode: opt.courierCode,
+      courierName: opt.courierName,
+      serviceCode: opt.service,
+      serviceName: opt.description,
+      etd: opt.etd,
+      cost: opt.cost,
+    }));
+
+    const evaluation = evaluateProductProfitAndSubsidy({
+      salePrice: input.salePrice,
+      costPrice: resolvedCostPrice,
+      packagingCost: input.packagingCost,
+      otherCost: input.otherCost,
+      currentSubsidy: input.shippingSubsidy,
+      minProfitTarget,
+      shippingOptions: mappedRates,
+      selectedOptionId: input.selectedOptionId ?? undefined,
+    });
+
+    const isLiveRajaOngkir = options.some((o) => o.source === 'rajaongkir');
+
+    return {
+      ...evaluation,
+      aggregator: {
+        provider: isLiveRajaOngkir ? 'rajaongkir' : 'flat',
+        liveAggregator: isLiveRajaOngkir,
+        fallbackReason: isLiveRajaOngkir ? null : 'Menggunakan tarif standar cadangan karena rute belum ditemukan di agregator',
+        originId: resolvedOriginId,
+        originCity: resolvedOriginCity,
+        destinationId: input.destinationId || '17473',
+        weightGram: Math.max(1, input.weightGram || 500),
+      },
+    };
   }
 
   @UseGuards(AdminGuard)
@@ -386,6 +494,10 @@ export class CatalogController {
           status: data.status,
           salePrice: data.salePrice,
           compareAtPrice: data.compareAtPrice ?? null,
+          costPrice: data.costPrice ?? 0,
+          packagingCost: data.packagingCost ?? 0,
+          otherCost: data.otherCost ?? 0,
+          shippingSubsidy: data.shippingSubsidy ?? 0,
           weightGram: data.weightGram,
           lengthCm: data.lengthCm ?? null,
           widthCm: data.widthCm ?? null,
@@ -396,12 +508,15 @@ export class CatalogController {
           seoTitle: data.seoTitle ?? null,
           seoDescription: data.seoDescription ?? null,
           images: {
-            create: (data.images ?? []).map((img, idx) => ({ url: img.url, alt: img.alt ?? '', sortOrder: idx })),
+            create: (data.images ?? [])
+              .slice(0, 3)
+              .map((img, idx) => ({ url: img.url, alt: img.alt ?? '', sortOrder: idx })),
           },
           variants: {
             create: (data.variants ?? []).map((v, idx) => ({
               sku: v.sku,
               name: v.name,
+              options: (v.options ?? {}) as Prisma.InputJsonValue,
               priceOverride: v.priceOverride ?? null,
               active: v.active,
               sortOrder: idx,
@@ -410,39 +525,39 @@ export class CatalogController {
         },
       });
 
-      if (data.initialStockQty !== undefined) {
-        const defaultWarehouse = await tx.warehouse.findFirst({
-          where: { active: true, supplier: { active: true } },
-          include: { supplier: true },
-          orderBy: { createdAt: 'asc' },
+      const stockToCreate = data.initialStockQty !== undefined ? data.initialStockQty : 25;
+      const defaultWarehouse = await tx.warehouse.findFirst({
+        where: { active: true, supplier: { active: true } },
+        include: { supplier: true },
+        orderBy: { createdAt: 'asc' },
+      });
+      if (defaultWarehouse) {
+        const offerCost = data.costPrice && data.costPrice > 0 ? data.costPrice : Math.round(prod.salePrice * 0.7);
+        const offer = await tx.supplierOffer.create({
+          data: {
+            productId: prod.id,
+            supplierId: defaultWarehouse.supplierId,
+            warehouseId: defaultWarehouse.id,
+            supplierSku: `${prod.sku}-DEF`,
+            costPrice: offerCost,
+            stockQty: stockToCreate,
+            leadTimeDays: 1,
+            fulfillmentPriority: 100,
+            codEnabled: defaultWarehouse.supplier.codSupported,
+            integrationMode: defaultWarehouse.supplier.integrationMode,
+            active: true,
+          },
         });
-        if (defaultWarehouse) {
-          const offer = await tx.supplierOffer.create({
+        if (stockToCreate > 0) {
+          await tx.inventoryMovement.create({
             data: {
-              productId: prod.id,
-              supplierId: defaultWarehouse.supplierId,
-              warehouseId: defaultWarehouse.id,
-              supplierSku: `${prod.sku}-DEF`,
-              costPrice: Math.round(prod.salePrice * 0.7),
-              stockQty: data.initialStockQty,
-              leadTimeDays: 1,
-              fulfillmentPriority: 100,
-              codEnabled: defaultWarehouse.supplier.codSupported,
-              integrationMode: defaultWarehouse.supplier.integrationMode,
-              active: true,
+              offerId: offer.id,
+              delta: stockToCreate,
+              reason: 'INITIAL_STOCK_ADMIN_FORM',
+              actorId: user.id,
+              note: 'Stok awal dari formulir admin produk',
             },
           });
-          if (data.initialStockQty > 0) {
-            await tx.inventoryMovement.create({
-              data: {
-                offerId: offer.id,
-                delta: data.initialStockQty,
-                reason: 'INITIAL_STOCK_ADMIN_FORM',
-                actorId: user.id,
-                note: 'Stok awal dari formulir admin produk',
-              },
-            });
-          }
         }
       }
 
@@ -490,7 +605,7 @@ export class CatalogController {
         await tx.productImage.deleteMany({ where: { productId: id } });
         if (data.images.length) {
           await tx.productImage.createMany({
-            data: data.images.map((img, idx) => ({
+            data: data.images.slice(0, 3).map((img, idx) => ({
               productId: id,
               url: img.url,
               alt: img.alt ?? '',
@@ -500,6 +615,16 @@ export class CatalogController {
         }
       }
       if (data.variants) {
+        const keptVariantIds = new Set(data.variants.map((v) => v.id).filter(Boolean) as string[]);
+        const removedVariants = existing.variants.filter((ev) => !keptVariantIds.has(ev.id));
+        for (const rv of removedVariants) {
+          const usedInOrders = await tx.orderItem.count({ where: { variantId: rv.id } });
+          if (usedInOrders > 0) {
+            await tx.productVariant.update({ where: { id: rv.id }, data: { active: false } });
+          } else {
+            await tx.productVariant.delete({ where: { id: rv.id } });
+          }
+        }
         for (const [idx, v] of data.variants.entries()) {
           if (v.id) {
             await tx.productVariant.update({
@@ -507,6 +632,7 @@ export class CatalogController {
               data: {
                 sku: v.sku,
                 name: v.name,
+                options: (v.options ?? {}) as Prisma.InputJsonValue,
                 priceOverride: v.priceOverride ?? null,
                 active: v.active,
                 sortOrder: idx,
@@ -518,6 +644,7 @@ export class CatalogController {
                 productId: id,
                 sku: v.sku,
                 name: v.name,
+                options: (v.options ?? {}) as Prisma.InputJsonValue,
                 priceOverride: v.priceOverride ?? null,
                 active: v.active,
                 sortOrder: idx,
@@ -526,18 +653,24 @@ export class CatalogController {
           }
         }
       }
-      if (data.initialStockQty !== undefined) {
+      if (data.initialStockQty !== undefined || data.costPrice !== undefined) {
         const primaryOffer = await tx.supplierOffer.findFirst({
           where: { productId: id, active: true },
           orderBy: { fulfillmentPriority: 'asc' },
         });
         if (primaryOffer) {
-          const delta = data.initialStockQty - primaryOffer.stockQty;
-          if (delta !== 0) {
+          const nextCostPrice =
+            data.costPrice !== undefined && data.costPrice > 0 ? data.costPrice : primaryOffer.costPrice;
+          const nextStockQty =
+            data.initialStockQty !== undefined ? data.initialStockQty : primaryOffer.stockQty;
+          const delta = nextStockQty - primaryOffer.stockQty;
+          if (delta !== 0 || nextCostPrice !== primaryOffer.costPrice) {
             await tx.supplierOffer.update({
               where: { id: primaryOffer.id },
-              data: { stockQty: data.initialStockQty },
+              data: { stockQty: nextStockQty, costPrice: nextCostPrice },
             });
+          }
+          if (delta !== 0) {
             await tx.inventoryMovement.create({
               data: {
                 offerId: primaryOffer.id,
@@ -555,14 +688,19 @@ export class CatalogController {
             orderBy: { createdAt: 'asc' },
           });
           if (defaultWarehouse) {
+            const stockToSet = data.initialStockQty ?? 25;
+            const costToSet =
+              data.costPrice && data.costPrice > 0
+                ? data.costPrice
+                : Math.round((data.salePrice ?? existing.salePrice) * 0.7);
             const createdOffer = await tx.supplierOffer.create({
               data: {
                 productId: id,
                 supplierId: defaultWarehouse.supplierId,
                 warehouseId: defaultWarehouse.id,
                 supplierSku: `${data.sku ?? existing.sku}-DEF`,
-                costPrice: Math.round((data.salePrice ?? existing.salePrice) * 0.7),
-                stockQty: data.initialStockQty,
+                costPrice: costToSet,
+                stockQty: stockToSet,
                 leadTimeDays: 1,
                 fulfillmentPriority: 100,
                 codEnabled: defaultWarehouse.supplier.codSupported,
@@ -570,11 +708,11 @@ export class CatalogController {
                 active: true,
               },
             });
-            if (data.initialStockQty > 0) {
+            if (stockToSet > 0) {
               await tx.inventoryMovement.create({
                 data: {
                   offerId: createdOffer.id,
-                  delta: data.initialStockQty,
+                  delta: stockToSet,
                   reason: 'INITIAL_STOCK_ADMIN_FORM',
                   actorId: user.id,
                   note: 'Stok awal dari formulir produk admin',
@@ -595,6 +733,11 @@ export class CatalogController {
           status: data.status ?? existing.status,
           salePrice: data.salePrice ?? existing.salePrice,
           compareAtPrice: data.compareAtPrice !== undefined ? data.compareAtPrice : existing.compareAtPrice,
+          costPrice: data.costPrice !== undefined ? data.costPrice : existing.costPrice,
+          packagingCost: data.packagingCost !== undefined ? data.packagingCost : existing.packagingCost,
+          otherCost: data.otherCost !== undefined ? data.otherCost : existing.otherCost,
+          shippingSubsidy:
+            data.shippingSubsidy !== undefined ? data.shippingSubsidy : existing.shippingSubsidy,
           weightGram: data.weightGram ?? existing.weightGram,
           lengthCm: data.lengthCm !== undefined ? data.lengthCm : existing.lengthCm,
           widthCm: data.widthCm !== undefined ? data.widthCm : existing.widthCm,

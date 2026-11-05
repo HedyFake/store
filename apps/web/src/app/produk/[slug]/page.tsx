@@ -7,15 +7,17 @@ import {
   ArrowRight,
   CheckCircle2,
   Heart,
+  Layers,
   MapPin,
+  MessageCircle,
   Minus,
-  Package,
   Plus,
   ShieldCheck,
   ShoppingBag,
   Truck,
+  Video,
 } from 'lucide-react';
-import { formatRupiah } from '@store/shared';
+import { formatRupiah, isVideoMediaUrl, waApiSendLink } from '@store/shared';
 import { apiFetch, type PublicProduct } from '@/lib/api';
 import { useStore } from '@/components/store-provider';
 import { StorefrontShell } from '@/components/storefront-shell';
@@ -24,7 +26,7 @@ import { ProductCard } from '@/components/product-card';
 export default function ProductDetailPage() {
   const params = useParams<{ slug: string }>();
   const router = useRouter();
-  const { addToCart, wishlist, toggleWishlist } = useStore();
+  const { addToCart, wishlist, toggleWishlist, config } = useStore();
 
   const [product, setProduct] = useState<PublicProduct | null>(null);
   const [related, setRelated] = useState<PublicProduct[]>([]);
@@ -87,10 +89,70 @@ export default function ProductDetailPage() {
   const availableStock = activeVariant ? activeVariant.stockQty : product.availability.totalStock;
   const inStock = availableStock > 0;
   const isSaved = wishlist.includes(product.id);
-  const images = product.images.length
-    ? product.images
-    : [{ id: 'fallback', url: '/demo/lamp.jpg', alt: product.name }];
+  const images = (
+    product.images.length
+      ? product.images
+      : [{ id: 'fallback', url: '/demo/lamp.jpg', alt: product.name }]
+  ).slice(0, 3);
   const currentImg = images[selectedImage] ?? images[0];
+  const isCurrentVideo = isVideoMediaUrl(currentImg.url);
+
+  // Extract structured Warna / Ukuran attributes if present
+  const uniqueColors = Array.from(
+    new Set(
+      product.variants
+        .map((v) => {
+          const opts = (v.options ?? {}) as Record<string, string>;
+          return opts.Warna || opts.warna || '';
+        })
+        .filter(Boolean),
+    ),
+  );
+  const uniqueSizes = Array.from(
+    new Set(
+      product.variants
+        .map((v) => {
+          const opts = (v.options ?? {}) as Record<string, string>;
+          return opts.Ukuran || opts.ukuran || '';
+        })
+        .filter(Boolean),
+    ),
+  );
+
+  const activeOpts = ((activeVariant?.options ?? {}) as Record<string, string>) || {};
+  const activeColor = activeOpts.Warna || activeOpts.warna || '';
+  const activeSize = activeOpts.Ukuran || activeOpts.ukuran || '';
+
+  const selectByColorAndSize = (nextColor: string, nextSize: string) => {
+    const exact = product.variants.find((v) => {
+      const o = (v.options ?? {}) as Record<string, string>;
+      const c = o.Warna || o.warna || '';
+      const s = o.Ukuran || o.ukuran || '';
+      return (!nextColor || c === nextColor) && (!nextSize || s === nextSize);
+    });
+    if (exact) {
+      setSelectedVariantId(exact.id);
+      return;
+    }
+    const partial = product.variants.find((v) => {
+      const o = (v.options ?? {}) as Record<string, string>;
+      const c = o.Warna || o.warna || '';
+      const s = o.Ukuran || o.ukuran || '';
+      return (nextColor && c === nextColor) || (nextSize && s === nextSize);
+    });
+    if (partial) setSelectedVariantId(partial.id);
+  };
+
+  // Direct WhatsApp Order & Payment Link (+6285141784243)
+  const storeWaNumber = config?.store.whatsappNumber || '6285141784243';
+  const waMessage = `Halo kak, saya mau beli barang ini: ${product.name}${
+    activeVariant ? ` (Variasi: ${activeVariant.name})` : ''
+  } - Jumlah: ${quantity} pcs - Total Harga Barang: ${formatRupiah(
+    effectivePrice * quantity,
+  )} (SKU: ${activeVariant?.sku ?? product.sku})`;
+  const directWhatsappUrl =
+    waApiSendLink(storeWaNumber, waMessage) ??
+    `https://api.whatsapp.com/send/?phone=6285141784243&text=${encodeURIComponent(waMessage)}&type=phone_number&app_absent=0`;
 
   const handleAdd = (buyNow = false) => {
     if (!inStock) return;
@@ -112,7 +174,10 @@ export default function ProductDetailPage() {
     <StorefrontShell>
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-12 py-8">
         {/* Breadcrumb */}
-        <nav aria-label="Breadcrumb" className="text-xs text-ink-muted mb-6 flex items-center gap-2 flex-wrap">
+        <nav
+          aria-label="Breadcrumb"
+          className="text-xs text-ink-muted mb-6 flex items-center gap-2 flex-wrap"
+        >
           <Link href="/" className="hover:text-ink">
             Beranda
           </Link>
@@ -131,25 +196,46 @@ export default function ProductDetailPage() {
           <span className="text-ink font-medium">{product.name}</span>
         </nav>
 
-        {/* Main Product Showcase Grid (7 cols gallery + 5 cols narrative/checkout box) */}
+        {/* Main Product Showcase Grid */}
         <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 lg:gap-12">
-          {/* Left Column: Gallery & Highlights */}
+          {/* Left Column: Up to 3 Photos or Videos Gallery */}
           <div className="lg:col-span-7 space-y-4">
             <div className="grid grid-cols-1 sm:grid-cols-12 gap-4">
               {images.length > 1 && (
                 <div className="sm:col-span-2 flex sm:flex-col gap-3 order-2 sm:order-1 overflow-x-auto">
-                  {images.map((img, idx) => (
-                    <button
-                      key={img.id}
-                      type="button"
-                      onClick={() => setSelectedImage(idx)}
-                      className={`w-16 h-16 sm:w-full sm:aspect-square rounded-xl overflow-hidden border-2 transition-all shrink-0 ${
-                        selectedImage === idx ? 'border-primary' : 'border-transparent opacity-70'
-                      }`}
-                    >
-                      <img src={img.url} alt={img.alt || product.name} className="w-full h-full object-cover" />
-                    </button>
-                  ))}
+                  {images.map((img, idx) => {
+                    const isVid = isVideoMediaUrl(img.url);
+                    return (
+                      <button
+                        key={img.id || idx}
+                        type="button"
+                        onClick={() => setSelectedImage(idx)}
+                        className={`relative w-16 h-16 sm:w-full sm:aspect-square rounded-xl overflow-hidden border-2 transition-all shrink-0 ${
+                          selectedImage === idx ? 'border-primary' : 'border-transparent opacity-70'
+                        }`}
+                      >
+                        {isVid ? (
+                          <>
+                            <video
+                              src={img.url}
+                              muted
+                              playsInline
+                              className="w-full h-full object-cover"
+                            />
+                            <span className="absolute inset-0 flex items-center justify-center bg-black/35 text-white">
+                              <Video className="w-4 h-4" />
+                            </span>
+                          </>
+                        ) : (
+                          <img
+                            src={img.url}
+                            alt={img.alt || `${product.name} ${idx + 1}`}
+                            className="w-full h-full object-cover"
+                          />
+                        )}
+                      </button>
+                    );
+                  })}
                 </div>
               )}
 
@@ -158,17 +244,22 @@ export default function ProductDetailPage() {
                   images.length > 1 ? 'sm:col-span-10' : 'sm:col-span-12'
                 } order-1 sm:order-2 relative aspect-[4/4] rounded-2xl overflow-hidden bg-surface border border-border/40`}
               >
-                <img
-                  src={currentImg.url}
-                  alt={currentImg.alt || product.name}
-                  className="w-full h-full object-cover"
-                />
-                <div className="absolute top-4 left-4 flex flex-wrap gap-2">
-                  {product.isDemo && (
-                    <span className="px-3 py-1 rounded-full bg-primary text-white text-[10px] font-bold uppercase tracking-wider">
-                      DATA CONTOH (DEMO)
-                    </span>
-                  )}
+                {isCurrentVideo ? (
+                  <video
+                    key={currentImg.url}
+                    src={currentImg.url}
+                    controls
+                    playsInline
+                    className="w-full h-full object-cover bg-black"
+                  />
+                ) : (
+                  <img
+                    src={currentImg.url}
+                    alt={currentImg.alt || product.name}
+                    className="w-full h-full object-cover"
+                  />
+                )}
+                <div className="absolute top-4 left-4 flex flex-wrap gap-2 pointer-events-none">
                   {product.badges
                     .filter((b) => b.toUpperCase() !== 'DEMO')
                     .map((b) => (
@@ -179,6 +270,15 @@ export default function ProductDetailPage() {
                         {b}
                       </span>
                     ))}
+                  {(product.shippingSubsidy ?? 0) > 0 && (
+                    <span className="px-3 py-1 rounded-full bg-evergreen text-white text-[10px] font-bold uppercase tracking-wider inline-flex items-center gap-1">
+                      <Truck className="w-3 h-3" />
+                      Subsidi Ongkir {formatRupiah(product.shippingSubsidy ?? 0)}
+                    </span>
+                  )}
+                </div>
+                <div className="absolute bottom-3 right-3 px-2.5 py-1 rounded-full bg-black/60 text-white text-[10px] font-semibold pointer-events-none">
+                  Media {selectedImage + 1} / {images.length} (Maks 3 Foto/Video)
                 </div>
               </div>
             </div>
@@ -204,7 +304,7 @@ export default function ProductDetailPage() {
             <div>
               <div className="flex items-center gap-2 mb-2">
                 <span className="text-[11px] font-bold uppercase tracking-widest text-accent-ink">
-                  {product.category?.name || 'KOLEKSI KURASI'}
+                  {product.category?.name || 'KOLEKSI PILIHAN'}
                 </span>
                 <span className="text-border">•</span>
                 <span className="text-[11px] font-mono text-ink-muted">
@@ -238,44 +338,121 @@ export default function ProductDetailPage() {
                   </>
                 )}
               </div>
+              {(product.shippingSubsidy ?? 0) > 0 && (
+                <div className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-evergreen-soft text-evergreen text-xs font-semibold">
+                  <Truck className="w-3.5 h-3.5" />
+                  <span>
+                    Hemat Ongkir Otomatis {formatRupiah(product.shippingSubsidy ?? 0)} saat
+                    Checkout!
+                  </span>
+                </div>
+              )}
               <p className="text-xs text-ink-muted">
-                Harga resmi server dalam Rupiah (IDR). Ongkos kirim dihitung saat checkout sesuai
-                gudang asal dan kecamatan tujuan.
+                Harga resmi dalam Rupiah (IDR). Ongkos kirim dihitung otomatis dari agregator saat
+                checkout sesuai gudang asal dan kecamatan tujuan.
               </p>
             </div>
 
-            {/* Variants selector */}
+            {/* Product Variations Selector (Warna, Ukuran, & Daftar Varian) */}
             {product.variants.length > 0 && (
-              <div className="space-y-2.5">
-                <label className="text-xs font-bold uppercase tracking-wider text-ink block">
-                  Pilih Varian / Tipe Paket
-                </label>
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
-                  {product.variants.map((v) => {
-                    const selected = v.id === selectedVariantId;
-                    return (
-                      <button
-                        key={v.id}
-                        type="button"
-                        onClick={() => setSelectedVariantId(v.id)}
-                        className={`p-3.5 rounded-xl border text-left transition-all ${
-                          selected
-                            ? 'border-primary bg-surface shadow-sm ring-1 ring-primary'
-                            : 'border-border/60 bg-surface/60 hover:bg-surface'
-                        }`}
-                      >
-                        <div className="flex items-center justify-between gap-2">
-                          <span className="text-xs font-bold text-ink">{v.name}</span>
-                          <span className="text-[11px] font-semibold text-accent-ink">
-                            {formatRupiah(v.effectivePrice)}
+              <div className="p-4 rounded-2xl bg-surface border border-border/60 space-y-4">
+                <div className="flex items-center justify-between">
+                  <span className="text-xs font-bold uppercase tracking-wider text-primary flex items-center gap-1.5">
+                    <Layers className="w-4 h-4 text-accent-ink" />
+                    <span>Pilih Variasi Produk</span>
+                  </span>
+                  {activeVariant && (
+                    <span className="text-xs font-semibold text-evergreen">
+                      Terpilih: {activeVariant.name}
+                    </span>
+                  )}
+                </div>
+
+                {uniqueColors.length > 0 && (
+                  <div className="space-y-1.5">
+                    <label className="text-[11px] font-semibold text-ink-muted block">
+                      Pilihan Warna: <strong className="text-ink">{activeColor || '-'}</strong>
+                    </label>
+                    <div className="flex flex-wrap gap-2">
+                      {uniqueColors.map((color) => {
+                        const selected = activeColor === color;
+                        return (
+                          <button
+                            key={color}
+                            type="button"
+                            onClick={() => selectByColorAndSize(color, activeSize)}
+                            className={`px-3.5 py-1.5 rounded-xl border text-xs font-semibold transition-all ${
+                              selected
+                                ? 'bg-primary text-white border-primary shadow-sm'
+                                : 'bg-surface-low text-ink border-border/60 hover:bg-surface-high'
+                            }`}
+                          >
+                            {color}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+                )}
+
+                {uniqueSizes.length > 0 && (
+                  <div className="space-y-1.5">
+                    <label className="text-[11px] font-semibold text-ink-muted block">
+                      Pilihan Ukuran: <strong className="text-ink">{activeSize || '-'}</strong>
+                    </label>
+                    <div className="flex flex-wrap gap-2">
+                      {uniqueSizes.map((sz) => {
+                        const selected = activeSize === sz;
+                        return (
+                          <button
+                            key={sz}
+                            type="button"
+                            onClick={() => selectByColorAndSize(activeColor, sz)}
+                            className={`min-w-[44px] px-3 py-1.5 rounded-xl border text-xs font-bold transition-all ${
+                              selected
+                                ? 'bg-primary text-white border-primary shadow-sm'
+                                : 'bg-surface-low text-ink border-border/60 hover:bg-surface-high'
+                            }`}
+                          >
+                            {sz}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+                )}
+
+                <div className="space-y-1.5 pt-1">
+                  <label className="text-[11px] font-semibold text-ink-muted block">
+                    Semua Variasi Tersedia ({product.variants.length} opsi):
+                  </label>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                    {product.variants.map((v) => {
+                      const selected = v.id === selectedVariantId;
+                      return (
+                        <button
+                          key={v.id}
+                          type="button"
+                          onClick={() => setSelectedVariantId(v.id)}
+                          className={`p-3 rounded-xl border text-left transition-all ${
+                            selected
+                              ? 'border-primary bg-surface-low shadow-sm ring-1 ring-primary'
+                              : 'border-border/60 bg-surface hover:bg-surface-low'
+                          }`}
+                        >
+                          <div className="flex items-center justify-between gap-2">
+                            <span className="text-xs font-bold text-ink">{v.name}</span>
+                            <span className="text-[11px] font-semibold text-accent-ink">
+                              {formatRupiah(v.effectivePrice)}
+                            </span>
+                          </div>
+                          <span className="text-[10px] text-ink-muted mt-0.5 block">
+                            SKU: {v.sku} • Stok: {v.stockQty} unit
                           </span>
-                        </div>
-                        <span className="text-[11px] text-ink-muted mt-1 block">
-                          Stok: {v.stockQty} unit
-                        </span>
-                      </button>
-                    );
-                  })}
+                        </button>
+                      );
+                    })}
+                  </div>
                 </div>
               </div>
             )}
@@ -321,7 +498,7 @@ export default function ProductDetailPage() {
               </div>
             </div>
 
-            {/* Action CTAs */}
+            {/* Action CTAs including Direct WhatsApp Payment */}
             <div className="space-y-3 pt-2">
               <div className="flex gap-3">
                 <button
@@ -351,12 +528,22 @@ export default function ProductDetailPage() {
                 onClick={() => handleAdd(true)}
                 className="w-full py-3.5 px-5 bg-accent text-primary rounded-xl text-sm font-bold flex items-center justify-center gap-2 hover:bg-accent-soft disabled:opacity-50 transition-colors"
               >
-                <span>Beli Sekarang Langsung</span>
+                <span>Beli &amp; Checkout Sekarang</span>
                 <ArrowRight className="w-4 h-4" />
               </button>
+
+              <a
+                href={directWhatsappUrl}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="w-full py-3.5 px-5 bg-evergreen text-white rounded-xl text-sm font-bold flex items-center justify-center gap-2 hover:opacity-95 transition-opacity"
+              >
+                <MessageCircle className="w-4 h-4" />
+                <span>Beli / Bayar Lewat WhatsApp (+62 851-4178-4243)</span>
+              </a>
             </div>
 
-            {/* Fulfilment & supplier transparency box */}
+            {/* Fulfilment & contact transparency box */}
             <div className="p-4 rounded-2xl bg-surface-low border border-border/50 space-y-3 text-xs">
               <div className="flex items-start gap-3">
                 <MapPin className="w-4 h-4 text-accent-ink shrink-0 mt-0.5" />
@@ -377,20 +564,19 @@ export default function ProductDetailPage() {
                 <div>
                   <span className="font-bold text-ink block">Metode Pembayaran Didukung</span>
                   <span className="text-ink-muted">
-                    Transfer Bank, QRIS Toko
+                    Pembayaran via WhatsApp (+6285141784243), Transfer Bank, QRIS Toko
                     {product.availability.codSupported
                       ? ', serta Bayar di Tempat (COD).'
-                      : ' (Produk ini tidak mendukung COD).'}
+                      : '.'}
                   </span>
                 </div>
               </div>
               <div className="flex items-start gap-3">
                 <ShieldCheck className="w-4 h-4 text-accent-ink shrink-0 mt-0.5" />
                 <div>
-                  <span className="font-bold text-ink block">Nomor Resi Resmi</span>
+                  <span className="font-bold text-ink block">Kontak &amp; Layanan Pelanggan Resmi</span>
                   <span className="text-ink-muted">
-                    Setiap pengiriman menampilkan kurir, nomor resi, dan dokumen PDF label pada
-                    halaman pelacakan pesanan.
+                    WA: +6285141784243 • Email: pastimurahnya12@gmail.com • IG: @pastimurahnya.my.id
                   </span>
                 </div>
               </div>
@@ -436,6 +622,14 @@ export default function ProductDetailPage() {
                 <span className="font-mono font-semibold">{product.sku}</span>
               </div>
               <div className="p-4 flex justify-between">
+                <span className="text-ink-muted">Jumlah Variasi</span>
+                <span className="font-semibold">
+                  {product.variants.length > 0
+                    ? `${product.variants.length} Pilihan Variasi`
+                    : '1 Tipe Standar'}
+                </span>
+              </div>
+              <div className="p-4 flex justify-between">
                 <span className="text-ink-muted">Berat Pengiriman</span>
                 <span className="font-semibold">{product.weightGram} gram</span>
               </div>
@@ -451,10 +645,6 @@ export default function ProductDetailPage() {
                   {product.availability.codSupported ? 'Tersedia' : 'Tidak Tersedia'}
                 </span>
               </div>
-              <div className="p-4 flex justify-between">
-                <span className="text-ink-muted">Jumlah Penawaran Pemasok Aktif</span>
-                <span className="font-semibold">{product.availability.offerCount} gudang</span>
-              </div>
             </div>
           )}
         </div>
@@ -465,7 +655,7 @@ export default function ProductDetailPage() {
             <div className="flex items-end justify-between mb-6">
               <div>
                 <span className="text-[11px] font-bold uppercase tracking-widest text-accent-ink block mb-1">
-                  PELENGKAP KURASI
+                  PELENGKAP PILIHAN
                 </span>
                 <h2 className="font-serif text-2xl sm:text-3xl text-primary">
                   Sering Dibeli Bersama
@@ -489,4 +679,3 @@ export default function ProductDetailPage() {
     </StorefrontShell>
   );
 }
-

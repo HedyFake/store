@@ -1,22 +1,48 @@
 'use client';
 
-import React, { useCallback, useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   AlertTriangle,
   Archive,
+  Calculator,
   CheckCircle2,
   Download,
   Edit3,
   FileSpreadsheet,
+  Layers,
   Plus,
+  RefreshCw,
   Search,
+  ShieldCheck,
+  Sparkles,
+  Trash2,
+  Truck,
   Upload,
+  Video,
 } from 'lucide-react';
-import { formatRupiah, slugify, type ImportMode, type ProtectedGroup } from '@store/shared';
+import {
+  evaluateProductProfitAndSubsidy,
+  formatRupiah,
+  isVideoMediaUrl,
+  slugify,
+  type ImportMode,
+  type ProtectedGroup,
+  type ShippingRateInput,
+} from '@store/shared';
 import { apiFetch } from '@/lib/api';
 import { useStore } from '@/components/store-provider';
 import { AdminShell } from '@/components/admin-shell';
 import { StatusBadge } from '@/components/status-badge';
+
+interface AdminVariantRow {
+  id?: string;
+  sku: string;
+  name: string;
+  options?: Record<string, string>;
+  priceOverride: number | null;
+  active: boolean;
+  sortOrder?: number;
+}
 
 interface AdminProductRow {
   id: string;
@@ -29,6 +55,10 @@ interface AdminProductRow {
   status: 'DRAFT' | 'ACTIVE' | 'ARCHIVED';
   salePrice: number;
   compareAtPrice: number | null;
+  costPrice: number;
+  packagingCost: number;
+  otherCost: number;
+  shippingSubsidy: number;
   weightGram: number;
   highlights: string[];
   badges: string[];
@@ -36,6 +66,7 @@ interface AdminProductRow {
   isDemo: boolean;
   totalStock: number;
   images: Array<{ id: string; url: string; alt: string }>;
+  variants: AdminVariantRow[];
   offers: Array<{
     id: string;
     supplierSku: string;
@@ -43,7 +74,7 @@ interface AdminProductRow {
     stockQty: number;
     codEnabled: boolean;
     supplier: { id: string; name: string };
-    warehouse: { id: string; name: string; city: string };
+    warehouse: { id: string; name: string; city: string; shippingOriginId?: string | null };
   }>;
 }
 
@@ -82,6 +113,25 @@ interface CommitResponse {
   errors: Array<{ rowNumber: number; column: string | null; sku: string | null; message: string }>;
 }
 
+interface EditableVariant {
+  id?: string;
+  sku: string;
+  warna: string;
+  ukuran: string;
+  customName: string;
+  priceOverride: string;
+  active: boolean;
+}
+
+const SAMPLE_DESTINATIONS = [
+  { id: '17473', label: 'Kebayoran Baru, Jakarta Selatan (DKI Jakarta)' },
+  { id: '17512', label: 'Menteng, Jakarta Pusat (DKI Jakarta)' },
+  { id: '6984', label: 'Coblong, Kota Bandung (Jawa Barat)' },
+  { id: '42915', label: 'Gubeng, Kota Surabaya (Jawa Timur)' },
+  { id: '31597', label: 'Depok, Sleman (DI Yogyakarta)' },
+  { id: '5132', label: 'Denpasar Selatan, Kota Denpasar (Bali)' },
+];
+
 export default function AdminProductsPage() {
   const { showToast } = useStore();
   const [products, setProducts] = useState<AdminProductRow[]>([]);
@@ -98,22 +148,53 @@ export default function AdminProductsPage() {
   const [statusFilter, setStatusFilter] = useState('');
   const [categoryFilter, setCategoryFilter] = useState('');
 
-  // Form state (matches 2-column layout in manajemen_upload_produk_kala_admin)
+  // Form state
   const [editingId, setEditingId] = useState<string | null>(null);
   const [name, setName] = useState('');
   const [sku, setSku] = useState('');
   const [slug, setSlug] = useState('');
   const [categoryId, setCategoryId] = useState('');
   const [description, setDescription] = useState('');
-  const [salePrice, setSalePrice] = useState('249000');
+  const [salePrice, setSalePrice] = useState('150000');
   const [compareAtPrice, setCompareAtPrice] = useState('');
+  const [costPrice, setCostPrice] = useState('90000');
+  const [packagingCost, setPackagingCost] = useState('3000');
+  const [otherCost, setOtherCost] = useState('3000');
+  const [shippingSubsidy, setShippingSubsidy] = useState('0');
   const [weightGram, setWeightGram] = useState('500');
   const [stockQty, setStockQty] = useState('25');
-  const [imageUrl, setImageUrl] = useState('/demo/lamp.jpg');
+
+  // Up to 3 photos or videos
+  const [mediaSlots, setMediaSlots] = useState<Array<{ url: string; alt: string }>>([
+    { url: '/demo/lamp.jpg', alt: '' },
+  ]);
+  const [uploadingSlot, setUploadingSlot] = useState<number | null>(null);
+
+  // Product Variations (Warna, Ukuran, dll.)
+  const [variants, setVariants] = useState<EditableVariant[]>([]);
+
   const [highlightsText, setHighlightsText] = useState('Kualitas Kurasi, Pengiriman Terlindungi');
   const [status, setStatus] = useState<'DRAFT' | 'ACTIVE' | 'ARCHIVED'>('ACTIVE');
   const [featured, setFeatured] = useState(false);
   const [savingProduct, setSavingProduct] = useState(false);
+
+  // Automatic Profit & Aggregator Shipping Calculator state
+  const [minProfitTarget, setMinProfitTarget] = useState<number>(15000);
+  const [savingMinProfit, setSavingMinProfit] = useState(false);
+  const [destinationId, setDestinationId] = useState('17473');
+  const [aggregatorRates, setAggregatorRates] = useState<ShippingRateInput[]>([]);
+  const [selectedOptionId, setSelectedOptionId] = useState<string>('');
+  const [aggregatorMeta, setAggregatorMeta] = useState<{
+    provider: string;
+    liveAggregator: boolean;
+    originCity: string;
+    loading: boolean;
+  }>({
+    provider: 'rajaongkir',
+    liveAggregator: false,
+    originCity: 'Jakarta Selatan',
+    loading: false,
+  });
 
   // Quick category creation
   const [newCategoryName, setNewCategoryName] = useState('');
@@ -132,23 +213,177 @@ export default function AdminProductsPage() {
     if (q) params.set('q', q);
     if (statusFilter) params.set('status', statusFilter);
     if (categoryFilter) params.set('categoryId', categoryFilter);
-    const [prodRes, catRes] = await Promise.all([
+    const [prodRes, catRes, settingsRes] = await Promise.all([
       apiFetch<{
         items: AdminProductRow[];
         total: number;
         metrics: { activeProducts: number; lowStockProducts: number; inventoryCostValue: number };
       }>(`/api/admin/products?${params.toString()}`),
       apiFetch<Array<{ id: string; name: string; slug: string }>>('/api/admin/categories'),
+      apiFetch<{ shipping?: { minProfitPerOrder?: number } }>('/api/admin/settings').catch(
+        () => null,
+      ),
     ]);
     setProducts(prodRes.items);
     setTotal(prodRes.total);
     setMetrics(prodRes.metrics);
     setCategories(catRes);
+    if (settingsRes?.shipping?.minProfitPerOrder != null) {
+      setMinProfitTarget(settingsRes.shipping.minProfitPerOrder);
+    }
   }, [q, statusFilter, categoryFilter]);
 
   useEffect(() => {
     void loadData().catch(() => undefined);
   }, [loadData]);
+
+  // Fetch actual shipping rates from aggregator whenever destinationId, weightGram, or editingId changes
+  const fetchActualShippingRates = useCallback(async () => {
+    const parsedWeight = Math.max(1, Number(weightGram) || 500);
+    setAggregatorMeta((prev) => ({ ...prev, loading: true }));
+    try {
+      const res = await apiFetch<{
+        optionsBreakdown: Array<{
+          optionId: string;
+          courierCode: string;
+          courierName: string;
+          serviceCode: string;
+          serviceName: string;
+          etd: string;
+          shippingCost: number;
+        }>;
+        aggregator: {
+          provider: string;
+          liveAggregator: boolean;
+          originCity: string;
+        };
+      }>('/api/admin/products/profit-preview', {
+        method: 'POST',
+        body: JSON.stringify({
+          productId: editingId,
+          salePrice: Math.max(0, Number(salePrice) || 0),
+          costPrice: Math.max(0, Number(costPrice) || 0),
+          packagingCost: Math.max(0, Number(packagingCost) || 0),
+          otherCost: Math.max(0, Number(otherCost) || 0),
+          shippingSubsidy: Math.max(0, Number(shippingSubsidy) || 0),
+          weightGram: parsedWeight,
+          destinationId,
+          minProfitTarget,
+        }),
+      });
+      const rates: ShippingRateInput[] = (res.optionsBreakdown || []).map((o) => ({
+        optionId: o.optionId,
+        courierCode: o.courierCode,
+        courierName: o.courierName,
+        serviceCode: o.serviceCode,
+        serviceName: o.serviceName,
+        etd: o.etd,
+        cost: o.shippingCost,
+      }));
+      setAggregatorRates(rates);
+      setSelectedOptionId((prev) =>
+        rates.some((r) => r.optionId === prev) ? prev : (rates[0]?.optionId ?? ''),
+      );
+      setAggregatorMeta({
+        provider: res.aggregator?.provider ?? 'rajaongkir',
+        liveAggregator: Boolean(res.aggregator?.liveAggregator),
+        originCity: res.aggregator?.originCity ?? 'Jakarta Selatan',
+        loading: false,
+      });
+    } catch {
+      setAggregatorMeta((prev) => ({ ...prev, loading: false }));
+    }
+  }, [
+    editingId,
+    weightGram,
+    destinationId,
+    salePrice,
+    costPrice,
+    packagingCost,
+    otherCost,
+    shippingSubsidy,
+    minProfitTarget,
+  ]);
+
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      void fetchActualShippingRates();
+    }, 280);
+    return () => clearTimeout(timer);
+  }, [editingId, weightGram, destinationId]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Real-time automatic profit & subsidy evaluation whenever any price/cost/subsidy/shipping input changes
+  const profitEval = useMemo(() => {
+    return evaluateProductProfitAndSubsidy({
+      salePrice: Math.max(0, Number(salePrice) || 0),
+      costPrice: Math.max(0, Number(costPrice) || 0),
+      packagingCost: Math.max(0, Number(packagingCost) || 0),
+      otherCost: Math.max(0, Number(otherCost) || 0),
+      currentSubsidy: Math.max(0, Number(shippingSubsidy) || 0),
+      minProfitTarget: Math.max(0, Number(minProfitTarget) || 15000),
+      shippingOptions: aggregatorRates,
+      selectedOptionId: selectedOptionId || undefined,
+    });
+  }, [
+    salePrice,
+    costPrice,
+    packagingCost,
+    otherCost,
+    shippingSubsidy,
+    minProfitTarget,
+    aggregatorRates,
+    selectedOptionId,
+  ]);
+
+  const handleSaveMinProfitTarget = async () => {
+    setSavingMinProfit(true);
+    try {
+      const settingsRes = await apiFetch<{
+        shipping: {
+          provider: 'rajaongkir' | 'flat';
+          couriers: string[];
+          flatRatePerGroup: number;
+          flatRateLabel: string;
+          freeShippingMinSubtotal: number;
+          minProfitPerOrder?: number;
+        };
+      }>('/api/admin/settings');
+      await apiFetch('/api/admin/settings/shipping', {
+        method: 'PUT',
+        body: JSON.stringify({
+          ...settingsRes.shipping,
+          minProfitPerOrder: Math.max(0, Math.round(minProfitTarget)),
+        }),
+      });
+      showToast(
+        `Target laba minimal disimpan: ${formatRupiah(Math.round(minProfitTarget))} / pesanan`,
+        'success',
+      );
+    } catch (err) {
+      showToast(err instanceof Error ? err.message : 'Gagal menyimpan target laba', 'danger');
+    } finally {
+      setSavingMinProfit(false);
+    }
+  };
+
+  // Explicit approval handlers: never mutate database without admin confirmation
+  const handleApproveRecommendation = () => {
+    setSalePrice(String(profitEval.recommendedSalePrice));
+    setShippingSubsidy(String(profitEval.recommendedSubsidy));
+    showToast(
+      `Rekomendasi disetujui ke form: Harga ${formatRupiah(profitEval.recommendedSalePrice)}, Subsidi Ongkir ${formatRupiah(profitEval.recommendedSubsidy)}. Klik Simpan Produk untuk menerapkan live.`,
+      'success',
+    );
+  };
+
+  const handleApprovePromoSubsidy = () => {
+    setSalePrice(String(profitEval.salePrice));
+    setShippingSubsidy(String(profitEval.optionalPromoSubsidy));
+    showToast(
+      `Promo subsidi ongkir ${formatRupiah(profitEval.optionalPromoSubsidy)} disetujui ke form (Laba bersih tetap aman ${formatRupiah(profitEval.optionalPromoNetProfit)}). Klik Simpan Produk untuk menerapkan live.`,
+      'success',
+    );
+  };
 
   const resetForm = () => {
     setEditingId(null);
@@ -157,11 +392,16 @@ export default function AdminProductsPage() {
     setSlug('');
     setCategoryId('');
     setDescription('');
-    setSalePrice('249000');
+    setSalePrice('150000');
     setCompareAtPrice('');
+    setCostPrice('90000');
+    setPackagingCost('3000');
+    setOtherCost('3000');
+    setShippingSubsidy('0');
     setWeightGram('500');
     setStockQty('25');
-    setImageUrl('/demo/lamp.jpg');
+    setMediaSlots([{ url: '/demo/lamp.jpg', alt: '' }]);
+    setVariants([]);
     setHighlightsText('');
     setStatus('ACTIVE');
     setFeatured(false);
@@ -176,19 +416,174 @@ export default function AdminProductsPage() {
     setDescription(p.description);
     setSalePrice(String(p.salePrice));
     setCompareAtPrice(p.compareAtPrice ? String(p.compareAtPrice) : '');
+    const resolvedHpp =
+      p.costPrice && p.costPrice > 0
+        ? p.costPrice
+        : (p.offers[0]?.costPrice ?? Math.round(p.salePrice * 0.65));
+    setCostPrice(String(resolvedHpp));
+    setPackagingCost(String(p.packagingCost ?? 3000));
+    setOtherCost(String(p.otherCost ?? 3000));
+    setShippingSubsidy(String(p.shippingSubsidy ?? 0));
     setWeightGram(String(p.weightGram));
     setStockQty(String(p.offers[0]?.stockQty ?? p.totalStock ?? 0));
-    setImageUrl(p.images[0]?.url ?? '/demo/lamp.jpg');
+    const existingImgs = (p.images ?? [])
+      .slice(0, 3)
+      .map((img) => ({ url: img.url, alt: img.alt || '' }));
+    setMediaSlots(existingImgs.length > 0 ? existingImgs : [{ url: '/demo/lamp.jpg', alt: '' }]);
+    setVariants(
+      (p.variants ?? []).map((v) => {
+        const opts = (v.options ?? {}) as Record<string, string>;
+        const warna = opts.Warna || opts.warna || '';
+        const ukuran = opts.Ukuran || opts.ukuran || '';
+        return {
+          id: v.id,
+          sku: v.sku,
+          warna,
+          ukuran,
+          customName: v.name,
+          priceOverride: v.priceOverride != null ? String(v.priceOverride) : '',
+          active: v.active !== false,
+        };
+      }),
+    );
     setHighlightsText(p.highlights.join(', '));
     setStatus(p.status);
     setFeatured(p.featured);
     window.scrollTo({ top: 0, behavior: 'smooth' });
   };
 
+  // Media slot helpers (max 3 photos or videos)
+  const handleAddMediaSlot = () => {
+    if (mediaSlots.length >= 3) {
+      showToast('Maksimal 3 foto atau video per produk', 'danger');
+      return;
+    }
+    setMediaSlots((prev) => [...prev, { url: '', alt: '' }]);
+  };
+
+  const handleRemoveMediaSlot = (index: number) => {
+    setMediaSlots((prev) => {
+      const next = prev.filter((_, i) => i !== index);
+      return next.length > 0 ? next : [{ url: '', alt: '' }];
+    });
+  };
+
+  const handleUploadMediaFile = async (index: number, file: File | null) => {
+    if (!file) return;
+    setUploadingSlot(index);
+    try {
+      const form = new FormData();
+      form.append('file', file);
+      const res = await apiFetch<{ url: string; mime: string }>('/api/admin/media', {
+        method: 'POST',
+        body: form,
+      });
+      setMediaSlots((prev) =>
+        prev.map((slot, i) => (i === index ? { ...slot, url: res.url } : slot)),
+      );
+      showToast('Foto/video berhasil diunggah', 'success');
+    } catch (err) {
+      showToast(err instanceof Error ? err.message : 'Gagal mengunggah media', 'danger');
+    } finally {
+      setUploadingSlot(null);
+    }
+  };
+
+  // Variant editor helpers
+  const addBlankVariant = () => {
+    const baseSku = (sku.trim() || 'PRD').toUpperCase();
+    const idx = variants.length + 1;
+    setVariants((prev) => [
+      ...prev,
+      {
+        sku: `${baseSku}-V${idx}`,
+        warna: '',
+        ukuran: '',
+        customName: '',
+        priceOverride: '',
+        active: true,
+      },
+    ]);
+  };
+
+  const addClothingSizePresets = (defaultColor = 'Hitam') => {
+    const baseSku = (sku.trim() || 'BAJU').toUpperCase();
+    const sizes = ['S', 'M', 'L', 'XL'];
+    const colorCode = defaultColor
+      .toUpperCase()
+      .replace(/[^A-Z0-9]/g, '')
+      .slice(0, 3);
+    const newRows: EditableVariant[] = sizes.map((sz) => ({
+      sku: `${baseSku}-${colorCode || 'CLR'}-${sz}`,
+      warna: defaultColor,
+      ukuran: sz,
+      customName: defaultColor ? `${defaultColor} - Ukuran ${sz}` : `Ukuran ${sz}`,
+      priceOverride: '',
+      active: true,
+    }));
+    setVariants((prev) => [...prev, ...newRows]);
+    showToast(`4 variasi ukuran (${sizes.join(', ')}) ditambahkan`, 'success');
+  };
+
+  const updateVariantField = (
+    idx: number,
+    field: keyof EditableVariant,
+    value: string | boolean,
+  ) => {
+    setVariants((prev) =>
+      prev.map((row, i) => {
+        if (i !== idx) return row;
+        const updated = { ...row, [field]: value };
+        if (field === 'warna' || field === 'ukuran') {
+          const parts = [
+            updated.warna.trim() ? updated.warna.trim() : '',
+            updated.ukuran.trim() ? `Ukuran ${updated.ukuran.trim()}` : '',
+          ].filter(Boolean);
+          if (parts.length > 0) {
+            updated.customName = parts.join(' • ');
+          }
+        }
+        return updated;
+      }),
+    );
+  };
+
+  const removeVariantRow = (idx: number) => {
+    setVariants((prev) => prev.filter((_, i) => i !== idx));
+  };
+
   const handleSaveProduct = async (e: React.FormEvent) => {
     e.preventDefault();
     setSavingProduct(true);
     try {
+      const validImages = mediaSlots
+        .map((m) => ({ url: m.url.trim(), alt: (m.alt || name).trim() }))
+        .filter((m) => m.url.length > 0)
+        .slice(0, 3);
+
+      const formattedVariants = variants
+        .map((v, idx) => {
+          const options: Record<string, string> = {};
+          if (v.warna.trim()) options.Warna = v.warna.trim();
+          if (v.ukuran.trim()) options.Ukuran = v.ukuran.trim();
+          const finalName =
+            v.customName.trim() ||
+            [v.warna.trim(), v.ukuran.trim() ? `Ukuran ${v.ukuran.trim()}` : '']
+              .filter(Boolean)
+              .join(' • ') ||
+            `Varian ${idx + 1}`;
+          return {
+            ...(v.id ? { id: v.id } : {}),
+            sku: (v.sku.trim() || `${sku.trim().toUpperCase()}-V${idx + 1}`).toUpperCase(),
+            name: finalName,
+            options,
+            priceOverride: v.priceOverride.trim() ? Number(v.priceOverride) : null,
+            active: v.active,
+            sortOrder: idx,
+          };
+        })
+        .filter((v) => v.name.length > 0);
+
       const payload = {
         sku: sku.trim().toUpperCase(),
         slug: slug.trim() || slugify(name),
@@ -198,6 +593,10 @@ export default function AdminProductsPage() {
         status,
         salePrice: Number(salePrice),
         compareAtPrice: compareAtPrice ? Number(compareAtPrice) : null,
+        costPrice: Math.max(0, Number(costPrice) || 0),
+        packagingCost: Math.max(0, Number(packagingCost) || 0),
+        otherCost: Math.max(0, Number(otherCost) || 0),
+        shippingSubsidy: Math.max(0, Number(shippingSubsidy) || 0),
         weightGram: Number(weightGram),
         initialStockQty: stockQty !== '' ? Math.max(0, Number(stockQty)) : undefined,
         highlights: highlightsText
@@ -207,7 +606,8 @@ export default function AdminProductsPage() {
           .slice(0, 8),
         badges: featured ? ['Pilihan Kurator'] : [],
         featured,
-        images: imageUrl.trim() ? [{ url: imageUrl.trim(), alt: name.trim() }] : [],
+        images: validImages,
+        variants: formattedVariants,
       };
 
       if (editingId) {
@@ -215,7 +615,7 @@ export default function AdminProductsPage() {
           method: 'PATCH',
           body: JSON.stringify(payload),
         });
-        showToast('Produk berhasil diperbarui', 'success');
+        showToast('Produk, biaya HPP, subsidi ongkir & variasi berhasil diperbarui', 'success');
       } else {
         await apiFetch('/api/admin/products', {
           method: 'POST',
@@ -331,8 +731,8 @@ export default function AdminProductsPage() {
 
   return (
     <AdminShell
-      title="Katalog & Manajemen Produk"
-      subtitle="Kelola inventaris, unggah produk baru, perbarui harga, dan impor katalog CSV secara presisi."
+      title="Katalog, Kalkulator Laba Otomatis & Variasi Produk"
+      subtitle="Kelola inventaris, hitung otomatis estimasi laba & subsidi ongkir aktual dari agregator, atur variasi warna/ukuran, dan unggah maksimal 3 foto/video."
       actions={
         <>
           <button
@@ -361,7 +761,7 @@ export default function AdminProductsPage() {
         </>
       }
     >
-      {/* KPI Summary Bento from real database figures (never fake 1.842 numbers) */}
+      {/* KPI Summary Bento from real database figures */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
         <div className="bg-surface rounded-2xl p-5 border border-border/40">
           <span className="text-[10px] font-bold uppercase tracking-widest text-ink-muted">
@@ -383,10 +783,12 @@ export default function AdminProductsPage() {
 
         <div className="bg-surface rounded-2xl p-5 border border-border/40">
           <span className="text-[10px] font-bold uppercase tracking-widest text-ink-muted">
-            KATEGORI AKTIF
+            TARGET LABA MINIMAL
           </span>
-          <p className="font-serif text-3xl text-primary mt-2">{categories.length}</p>
-          <span className="text-xs text-ink-muted mt-1 block">Departemen katalog</span>
+          <p className="font-serif text-2xl text-primary mt-2">{formatRupiah(minProfitTarget)}</p>
+          <span className="text-xs text-ink-muted mt-1 block">
+            Per pesanan (dapat diubah di bawah)
+          </span>
         </div>
 
         <div className="bg-surface rounded-2xl p-5 border border-border/40">
@@ -402,7 +804,7 @@ export default function AdminProductsPage() {
         </div>
       </div>
 
-      {/* Mass Upload CSV Panel (Preview / Dry-run / Row-by-row Errors / Protected Field Policy) */}
+      {/* Mass Upload CSV Panel */}
       {csvPanelOpen && (
         <div className="bg-surface rounded-2xl p-6 border-2 border-primary/20 shadow-sm space-y-5">
           <div className="flex flex-wrap items-center justify-between gap-4 pb-3 border-b border-border/40">
@@ -423,7 +825,7 @@ export default function AdminProductsPage() {
               className="px-3.5 py-2 rounded-lg bg-surface-low hover:bg-surface-high border border-border/60 text-xs font-semibold inline-flex items-center gap-1.5"
             >
               <Download className="w-3.5 h-3.5" />
-              <span>Unduh Template CSV (06_PRODUCT_IMPORT_TEMPLATE.csv)</span>
+              <span>Unduh Template CSV</span>
             </a>
           </div>
 
@@ -468,7 +870,6 @@ export default function AdminProductsPage() {
                 </div>
               </div>
 
-              {/* Mode & Protected Fields Policy */}
               <div className="p-4 rounded-xl bg-surface-low border border-border/60 space-y-3 text-xs">
                 <div className="flex flex-wrap items-center gap-6">
                   <span className="font-bold text-ink">Mode Impor:</span>
@@ -480,8 +881,7 @@ export default function AdminProductsPage() {
                       onChange={() => setImportMode('CREATE_ONLY')}
                     />
                     <span>
-                      <strong>CREATE_ONLY</strong> (Tolak/lewati SKU yang sudah ada — aman dari
-                      timpa)
+                      <strong>CREATE_ONLY</strong> (Tolak/lewati SKU yang sudah ada)
                     </span>
                   </label>
                   <label className="flex items-center gap-2 cursor-pointer">
@@ -500,8 +900,7 @@ export default function AdminProductsPage() {
                 {importMode === 'UPSERT_BY_SKU' && (
                   <div className="pt-2 border-t border-border/40 space-y-2">
                     <p className="font-semibold text-ink">
-                      Otorisasi Perubahan Field Terlindungi pada SKU Lama (default: hanya nama &amp;
-                      deskripsi yang diubah):
+                      Otorisasi Perubahan Field Terlindungi pada SKU Lama:
                     </p>
                     <div className="flex flex-wrap gap-4">
                       {(
@@ -528,82 +927,6 @@ export default function AdminProductsPage() {
                 )}
               </div>
 
-              {/* Preview Table */}
-              {preview.previewItems.length > 0 && (
-                <div className="overflow-x-auto border border-border/50 rounded-xl">
-                  <table className="w-full text-left text-xs">
-                    <thead className="bg-surface-low text-ink-muted uppercase text-[10px]">
-                      <tr>
-                        <th className="p-2.5">Baris</th>
-                        <th className="p-2.5">Aksi</th>
-                        <th className="p-2.5">SKU</th>
-                        <th className="p-2.5">Nama</th>
-                        <th className="p-2.5">Harga Jual</th>
-                        <th className="p-2.5">Modal</th>
-                        <th className="p-2.5">Stok</th>
-                        <th className="p-2.5">Perubahan Terdeteksi</th>
-                      </tr>
-                    </thead>
-                    <tbody className="divide-y divide-border/40">
-                      {preview.previewItems.slice(0, 15).map((item) => (
-                        <tr key={item.rowNumber}>
-                          <td className="p-2.5 font-mono">#{item.rowNumber}</td>
-                          <td className="p-2.5">
-                            <StatusBadge
-                              label={item.action}
-                              tone={item.action === 'CREATE' ? 'success' : 'accent'}
-                            />
-                          </td>
-                          <td className="p-2.5 font-mono font-bold">{item.sku}</td>
-                          <td className="p-2.5">{item.name}</td>
-                          <td className="p-2.5">{formatRupiah(item.salePrice)}</td>
-                          <td className="p-2.5">
-                            {item.costPrice != null ? formatRupiah(item.costPrice) : '-'}
-                          </td>
-                          <td className="p-2.5">{item.stockQty ?? '-'}</td>
-                          <td className="p-2.5">
-                            {item.diffs.length === 0
-                              ? 'Produk baru / tidak ada selisih'
-                              : item.diffs
-                                  .map((d) => `${d.field}: ${String(d.before)} → ${String(d.after)}`)
-                                  .join('; ')}
-                          </td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-              )}
-
-              {/* Row Errors */}
-              {preview.errors.length > 0 && (
-                <div className="p-4 rounded-xl bg-danger-soft/50 border border-danger/30 space-y-2 text-xs">
-                  <div className="flex items-center justify-between">
-                    <span className="font-bold text-danger flex items-center gap-1.5">
-                      <AlertTriangle className="w-4 h-4" />
-                      <span>Ditemukan {preview.errors.length} Kesalahan Validasi Baris</span>
-                    </span>
-                    <a
-                      href={`/api/admin/imports/${preview.jobId}/report.csv`}
-                      className="px-3 py-1 rounded bg-danger text-white font-semibold inline-flex items-center gap-1"
-                    >
-                      <Download className="w-3 h-3" />
-                      <span>Unduh Laporan Error CSV</span>
-                    </a>
-                  </div>
-                  <ul className="space-y-1 max-h-40 overflow-y-auto font-mono text-[11px] text-danger">
-                    {preview.errors.map((err, idx) => (
-                      <li key={idx}>
-                        Baris {err.rowNumber}
-                        {err.column ? ` [${err.column}]` : ''}
-                        {err.sku ? ` (SKU: ${err.sku})` : ''}: {err.message}
-                      </li>
-                    ))}
-                  </ul>
-                </div>
-              )}
-
-              {/* Commit Action */}
               {preview.validRows > 0 && !commitResult && (
                 <button
                   type="button"
@@ -627,15 +950,6 @@ export default function AdminProductsPage() {
                       {commitResult.failedCount} gagal.
                     </span>
                   </div>
-                  {commitResult.failedCount > 0 && (
-                    <a
-                      href={`/api/admin/imports/${commitResult.jobId}/report.csv`}
-                      className="px-3 py-1.5 rounded-lg bg-evergreen text-white font-semibold inline-flex items-center gap-1"
-                    >
-                      <Download className="w-3.5 h-3.5" />
-                      <span>Unduh Laporan Error CSV</span>
-                    </a>
-                  )}
                 </div>
               )}
             </div>
@@ -643,7 +957,7 @@ export default function AdminProductsPage() {
         </div>
       )}
 
-      {/* Primary Interactive Section: 2-Column Product Form matching Stitch Admin Reference */}
+      {/* Primary Interactive Form */}
       <form
         onSubmit={handleSaveProduct}
         className="bg-surface rounded-2xl p-6 border border-border/50 shadow-sm space-y-6"
@@ -652,7 +966,7 @@ export default function AdminProductsPage() {
           <div>
             <div className="flex items-center gap-2">
               <h2 className="font-serif text-xl text-primary">
-                {editingId ? 'Edit Produk Kurasi' : 'Unggah Produk Kurasi Baru'}
+                {editingId ? 'Edit Produk, Variasi & Skema Laba' : 'Tambah Produk Baru & Kalkulasi Laba Otomatis'}
               </h2>
               <StatusBadge
                 label={editingId ? 'MODE EDIT' : 'FORMULIR BARU'}
@@ -660,27 +974,42 @@ export default function AdminProductsPage() {
               />
             </div>
             <p className="text-xs text-ink-muted mt-0.5">
-              Lengkapi metadata produk dan harga jual toko. Penawaran stok per gudang pemasok dapat
-              ditambahkan di menu Pemasok &amp; Gudang.
+              Terintegrasi langsung dengan database produk, HPP, biaya kemasan, tarif ongkir aktual agregator, variasi warna/ukuran, dan maks. 3 foto/video.
             </p>
           </div>
-          {editingId && (
+          <div className="flex items-center gap-3">
             <button
               type="button"
-              onClick={resetForm}
-              className="text-xs font-semibold text-ink-muted hover:text-ink underline"
+              onClick={() => {
+                setSalePrice('150000');
+                setCostPrice('90000');
+                setPackagingCost('3000');
+                setOtherCost('3000');
+                setShippingSubsidy('0');
+                showToast('Simulasi contoh (Harga Rp150.000, HPP Rp90.000, Kemasan Rp3.000, Biaya Lain Rp3.000) dimuat');
+              }}
+              className="px-3 py-1.5 rounded-lg bg-accent-soft text-accent-ink text-[11px] font-semibold hover:bg-accent/30"
             >
-              Batal Edit / Buat Baru
+              Isi Contoh Uji (Rp150rb / HPP Rp90rb)
             </button>
-          )}
+            {editingId && (
+              <button
+                type="button"
+                onClick={resetForm}
+                className="text-xs font-semibold text-ink-muted hover:text-ink underline"
+              >
+                Batal Edit / Buat Baru
+              </button>
+            )}
+          </div>
         </div>
 
         <div className="grid grid-cols-1 lg:grid-cols-12 gap-8">
-          {/* Left Column (7 cols): Core Data & Pricing */}
-          <div className="lg:col-span-7 space-y-4">
+          {/* Left Column (7 cols): Core Data, Cost/HPP, Live Profit Engine, & Variations */}
+          <div className="lg:col-span-7 space-y-5">
             <div>
               <label className="text-xs font-semibold text-ink block mb-1">
-                Nama Produk Kurasi <span className="text-danger">*</span>
+                Nama Produk <span className="text-danger">*</span>
               </label>
               <input
                 type="text"
@@ -691,7 +1020,7 @@ export default function AdminProductsPage() {
                   setName(e.target.value);
                   if (!editingId) setSlug(slugify(e.target.value));
                 }}
-                placeholder="Contoh: Headphone Nirkabel Noise-Cancelling Seri One"
+                placeholder="Contoh: Kemeja Linen Oversize Lengan Panjang"
                 className="w-full h-10 px-3.5 rounded-lg bg-surface-low border border-border/60 text-xs"
               />
             </div>
@@ -735,16 +1064,576 @@ export default function AdminProductsPage() {
               </div>
             </div>
 
-            <div>
-              <label className="text-xs font-semibold text-ink block mb-1">Slug URL Produk</label>
-              <input
-                type="text"
-                required
-                value={slug}
-                onChange={(e) => setSlug(e.target.value)}
-                placeholder="headphone-nirkabel-seri-one"
-                className="w-full h-10 px-3.5 rounded-lg bg-surface-low border border-border/60 text-xs font-mono"
-              />
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              <div>
+                <label className="text-xs font-semibold text-ink block mb-1">
+                  SKU Master <span className="text-danger">*</span>
+                </label>
+                <input
+                  type="text"
+                  required
+                  value={sku}
+                  onChange={(e) => setSku(e.target.value.toUpperCase())}
+                  placeholder="PM-FSH-001"
+                  className="w-full h-10 px-3.5 rounded-lg bg-surface-low border border-border/60 text-xs font-mono uppercase"
+                />
+              </div>
+              <div>
+                <label className="text-xs font-semibold text-ink block mb-1">Slug URL Produk</label>
+                <input
+                  type="text"
+                  required
+                  value={slug}
+                  onChange={(e) => setSlug(e.target.value)}
+                  placeholder="kemeja-linen-oversize"
+                  className="w-full h-10 px-3.5 rounded-lg bg-surface-low border border-border/60 text-xs font-mono"
+                />
+              </div>
+            </div>
+
+            {/* Pricing, HPP, Costs & Shipping Subsidy Box */}
+            <div className="p-4 rounded-xl bg-surface-low border border-border/60 space-y-3">
+              <div className="flex items-center justify-between">
+                <span className="text-xs font-bold text-primary flex items-center gap-1.5">
+                  <Calculator className="w-4 h-4 text-accent-ink" />
+                  <span>Data Harga Jual, HPP, Biaya Operasional &amp; Subsidi Ongkir</span>
+                </span>
+                <span className="text-[11px] text-ink-muted">
+                  Diperbarui otomatis ke kalkulator laba di bawah
+                </span>
+              </div>
+
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+                <div>
+                  <label className="text-[11px] font-semibold text-ink block mb-1">
+                    Harga Jual (IDR) <span className="text-danger">*</span>
+                  </label>
+                  <input
+                    type="number"
+                    required
+                    min={1}
+                    value={salePrice}
+                    onChange={(e) => setSalePrice(e.target.value)}
+                    className="w-full h-9 px-2.5 rounded-lg bg-surface border border-border/60 text-xs font-bold text-primary"
+                  />
+                </div>
+                <div>
+                  <label className="text-[11px] font-semibold text-ink block mb-1">
+                    HPP / Harga Modal (IDR) <span className="text-danger">*</span>
+                  </label>
+                  <input
+                    type="number"
+                    required
+                    min={0}
+                    value={costPrice}
+                    onChange={(e) => setCostPrice(e.target.value)}
+                    className="w-full h-9 px-2.5 rounded-lg bg-surface border border-border/60 text-xs font-semibold"
+                  />
+                </div>
+                <div>
+                  <label className="text-[11px] font-semibold text-ink block mb-1">
+                    Biaya Kemasan (IDR)
+                  </label>
+                  <input
+                    type="number"
+                    min={0}
+                    value={packagingCost}
+                    onChange={(e) => setPackagingCost(e.target.value)}
+                    className="w-full h-9 px-2.5 rounded-lg bg-surface border border-border/60 text-xs"
+                  />
+                </div>
+                <div>
+                  <label className="text-[11px] font-semibold text-ink block mb-1">
+                    Biaya Lainnya (IDR)
+                  </label>
+                  <input
+                    type="number"
+                    min={0}
+                    value={otherCost}
+                    onChange={(e) => setOtherCost(e.target.value)}
+                    className="w-full h-9 px-2.5 rounded-lg bg-surface border border-border/60 text-xs"
+                  />
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 pt-1">
+                <div>
+                  <label className="text-[11px] font-semibold text-ink block mb-1">
+                    Subsidi Ongkir Produk (IDR)
+                  </label>
+                  <input
+                    type="number"
+                    min={0}
+                    value={shippingSubsidy}
+                    onChange={(e) => setShippingSubsidy(e.target.value)}
+                    className="w-full h-9 px-2.5 rounded-lg bg-surface border border-border/60 text-xs font-semibold text-evergreen"
+                  />
+                </div>
+                <div>
+                  <label className="text-[11px] font-semibold text-ink block mb-1">
+                    Harga Coret (Opsional)
+                  </label>
+                  <input
+                    type="number"
+                    min={0}
+                    value={compareAtPrice}
+                    onChange={(e) => setCompareAtPrice(e.target.value)}
+                    placeholder="Kosongkan bila normal"
+                    className="w-full h-9 px-2.5 rounded-lg bg-surface border border-border/60 text-xs"
+                  />
+                </div>
+                <div>
+                  <label className="text-[11px] font-semibold text-ink block mb-1">
+                    Stok Gudang (Unit)
+                  </label>
+                  <input
+                    type="number"
+                    min={0}
+                    value={stockQty}
+                    onChange={(e) => setStockQty(e.target.value)}
+                    className="w-full h-9 px-2.5 rounded-lg bg-surface border border-border/60 text-xs font-semibold"
+                  />
+                </div>
+                <div>
+                  <label className="text-[11px] font-semibold text-ink block mb-1">
+                    Berat (Gram) <span className="text-danger">*</span>
+                  </label>
+                  <input
+                    type="number"
+                    required
+                    min={1}
+                    value={weightGram}
+                    onChange={(e) => setWeightGram(e.target.value)}
+                    className="w-full h-9 px-2.5 rounded-lg bg-surface border border-border/60 text-xs"
+                  />
+                </div>
+              </div>
+            </div>
+
+            {/* LIVE AUTOMATIC PROFIT & SHIPPING SUBSIDY RECOMMENDATION ENGINE */}
+            <div
+              className={`p-5 rounded-2xl border-2 space-y-4 ${
+                !profitEval.isSafe
+                  ? 'bg-danger-soft/25 border-danger/50'
+                  : 'bg-evergreen-soft/20 border-evergreen/40'
+              }`}
+            >
+              <div className="flex flex-wrap items-center justify-between gap-3 pb-3 border-b border-border/40">
+                <div className="flex items-center gap-2">
+                  {profitEval.isSafe ? (
+                    <ShieldCheck className="w-5 h-5 text-evergreen shrink-0" />
+                  ) : (
+                    <AlertTriangle className="w-5 h-5 text-danger shrink-0" />
+                  )}
+                  <div>
+                    <h3 className="text-sm font-bold text-primary">
+                      Analisis Otomatis Laba, Ongkir Agregator &amp; Rekomendasi Subsidi
+                    </h3>
+                    <p className="text-[11px] text-ink-muted">
+                      Sumber Ongkir:{' '}
+                      <strong>
+                        {aggregatorMeta.liveAggregator
+                          ? 'Tarif Aktual RajaOngkir API (Live)'
+                          : 'Tarif Agregator Toko'}
+                      </strong>{' '}
+                      • Gudang Asal: <strong>{aggregatorMeta.originCity}</strong>
+                    </p>
+                  </div>
+                </div>
+                <StatusBadge
+                  label={profitEval.statusBadgeText}
+                  tone={profitEval.isSafe ? 'success' : 'danger'}
+                />
+              </div>
+
+              {/* Destination & Target Profit Controls */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs">
+                <div>
+                  <label className="text-[11px] font-semibold text-ink block mb-1">
+                    Tujuan Pengiriman Simulasi (RajaOngkir)
+                  </label>
+                  <div className="flex gap-1.5">
+                    <select
+                      value={destinationId}
+                      onChange={(e) => setDestinationId(e.target.value)}
+                      className="flex-1 h-9 px-2.5 rounded-lg bg-surface border border-border/60 text-xs"
+                    >
+                      {SAMPLE_DESTINATIONS.map((d) => (
+                        <option key={d.id} value={d.id}>
+                          {d.label}
+                        </option>
+                      ))}
+                    </select>
+                    <button
+                      type="button"
+                      onClick={() => void fetchActualShippingRates()}
+                      title="Muat ulang tarif agregator"
+                      className="px-2.5 h-9 rounded-lg bg-surface border border-border/60 hover:bg-surface-high text-ink"
+                    >
+                      <RefreshCw
+                        className={`w-3.5 h-3.5 ${aggregatorMeta.loading ? 'animate-spin' : ''}`}
+                      />
+                    </button>
+                  </div>
+                </div>
+
+                <div>
+                  <label className="text-[11px] font-semibold text-ink block mb-1">
+                    Target Laba Minimal / Pesanan (Default Rp 15.000)
+                  </label>
+                  <div className="flex gap-1.5">
+                    <input
+                      type="number"
+                      min={0}
+                      step={1000}
+                      value={minProfitTarget}
+                      onChange={(e) => setMinProfitTarget(Math.max(0, Number(e.target.value) || 0))}
+                      className="flex-1 h-9 px-2.5 rounded-lg bg-surface border border-border/60 text-xs font-bold text-primary"
+                    />
+                    <button
+                      type="button"
+                      disabled={savingMinProfit}
+                      onClick={handleSaveMinProfitTarget}
+                      className="px-3 h-9 rounded-lg bg-primary text-white text-[11px] font-semibold hover:bg-primary-container disabled:opacity-50"
+                    >
+                      {savingMinProfit ? '...' : 'Simpan Target'}
+                    </button>
+                  </div>
+                </div>
+              </div>
+
+              {/* Courier Service Selector from Aggregator */}
+              {profitEval.optionsBreakdown.length > 0 && (
+                <div className="space-y-1.5">
+                  <span className="text-[11px] font-semibold text-ink block">
+                    Pilih Layanan Kurir Aktual dari Agregator (Klik untuk melihat simulasi per kurir):
+                  </span>
+                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
+                    {profitEval.optionsBreakdown.map((opt) => {
+                      const active =
+                        (profitEval.selectedOption?.optionId ?? '') === opt.optionId;
+                      return (
+                        <button
+                          key={opt.optionId}
+                          type="button"
+                          onClick={() => setSelectedOptionId(opt.optionId)}
+                          className={`p-2.5 rounded-xl border text-left transition-all text-xs ${
+                            active
+                              ? 'border-primary bg-surface shadow-sm ring-1 ring-primary'
+                              : 'border-border/60 bg-surface/70 hover:bg-surface'
+                          }`}
+                        >
+                          <div className="flex items-center justify-between font-bold text-ink">
+                            <span>
+                              {opt.courierCode} {opt.serviceCode}
+                            </span>
+                            <span className="text-primary">{formatRupiah(opt.shippingCost)}</span>
+                          </div>
+                          <div className="flex items-center justify-between text-[10px] text-ink-muted mt-0.5">
+                            <span>ETD {opt.etd}</span>
+                            <span
+                              className={
+                                opt.isCurrentSchemeMeetingTarget
+                                  ? 'text-evergreen font-semibold'
+                                  : 'text-danger font-semibold'
+                              }
+                            >
+                              Laba: {formatRupiah(opt.netProfit)}
+                            </span>
+                          </div>
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
+
+              {/* Key Calculated Metrics Grid */}
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5 text-xs">
+                <div className="p-3 rounded-xl bg-surface border border-border/50">
+                  <span className="text-[10px] uppercase tracking-wider text-ink-muted block">
+                    Total Checkout Pembeli
+                  </span>
+                  <strong className="text-base text-primary block mt-0.5">
+                    {formatRupiah(profitEval.buyerTotalCheckout)}
+                  </strong>
+                  <span className="text-[10px] text-ink-muted">
+                    Harga {formatRupiah(profitEval.salePrice)} + Ongkir Pembeli{' '}
+                    {formatRupiah(profitEval.buyerShippingPay)}
+                  </span>
+                </div>
+
+                <div className="p-3 rounded-xl bg-surface border border-border/50">
+                  <span className="text-[10px] uppercase tracking-wider text-ink-muted block">
+                    Estimasi Laba Bersih
+                  </span>
+                  <strong
+                    className={`text-base block mt-0.5 ${
+                      profitEval.netProfit >= profitEval.minProfitTarget
+                        ? 'text-evergreen'
+                        : 'text-danger'
+                    }`}
+                  >
+                    {formatRupiah(profitEval.netProfit)}
+                  </strong>
+                  <span className="text-[10px] text-ink-muted">
+                    Margin Kotor {formatRupiah(profitEval.grossMarginBeforeSubsidy)} − Subsidi{' '}
+                    {formatRupiah(profitEval.appliedSubsidy)}
+                  </span>
+                </div>
+
+                <div className="p-3 rounded-xl bg-surface border border-border/50">
+                  <span className="text-[10px] uppercase tracking-wider text-ink-muted block">
+                    Subsidi Ongkir Maksimal
+                  </span>
+                  <strong className="text-base text-accent-ink block mt-0.5">
+                    {formatRupiah(profitEval.maxShippingSubsidy)}
+                  </strong>
+                  <span className="text-[10px] text-ink-muted">
+                    Batas Ruang Subsidi: {formatRupiah(profitEval.rawMaxSubsidyBudget)}
+                  </span>
+                </div>
+
+                <div className="p-3 rounded-xl bg-surface border border-border/50">
+                  <span className="text-[10px] uppercase tracking-wider text-ink-muted block">
+                    Rekomendasi Skema
+                  </span>
+                  <strong className="text-xs text-primary block mt-0.5 leading-snug">
+                    {profitEval.canFullFreeShipping
+                      ? 'Bisa Gratis Ongkir / Ongkir Normal'
+                      : profitEval.maxShippingSubsidy > 0
+                        ? `Subsidi Sebagian (Pembeli Bayar ${formatRupiah(profitEval.buyerRemainingShippingAtMaxSubsidy)})`
+                        : 'Ongkir Normal (Tanpa Subsidi)'}
+                  </strong>
+                  <span className="text-[10px] text-ink-muted">
+                    Ongkir Agregator: {formatRupiah(profitEval.shippingCost)}
+                  </span>
+                </div>
+              </div>
+
+              {/* Detailed Summary & Warnings */}
+              <div className="p-3.5 rounded-xl bg-surface border border-border/60 space-y-2 text-xs">
+                <p className="font-semibold text-ink">{profitEval.summaryText}</p>
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 pt-1 text-[11px] text-ink-muted border-t border-border/40">
+                  <div>
+                    • <strong>Skema Ongkir Normal (Subsidi Rp 0):</strong> Pembeli bayar{' '}
+                    {formatRupiah(profitEval.salePrice + profitEval.shippingCost)}, Laba Anda{' '}
+                    <strong>{formatRupiah(profitEval.profitWithNormalShipping)}</strong>.
+                  </div>
+                  <div>
+                    • <strong>Skema Subsidi Maksimal ({formatRupiah(profitEval.maxShippingSubsidy)}):</strong>{' '}
+                    Pembeli bayar sisa ongkir{' '}
+                    <strong>{formatRupiah(profitEval.buyerRemainingShippingAtMaxSubsidy)}</strong>, Laba Anda{' '}
+                    <strong>
+                      {formatRupiah(
+                        profitEval.grossMarginBeforeSubsidy - profitEval.maxShippingSubsidy,
+                      )}
+                    </strong>
+                    .
+                  </div>
+                  <div>
+                    • <strong>Status Gratis Ongkir Penuh:</strong>{' '}
+                    {profitEval.canFullFreeShipping ? (
+                      <span className="text-evergreen font-semibold">
+                        Aman (Laba {formatRupiah(profitEval.profitWithFullFreeShipping)} ≥ Target)
+                      </span>
+                    ) : (
+                      <span className="text-danger font-semibold">
+                        Tidak Direkomendasikan (Laba akan turun ke{' '}
+                        {formatRupiah(profitEval.profitWithFullFreeShipping)})
+                      </span>
+                    )}
+                  </div>
+                </div>
+
+                {profitEval.warnings.length > 0 && (
+                  <div className="p-2.5 rounded-lg bg-danger-soft/60 text-danger text-[11px] space-y-1">
+                    {profitEval.warnings.map((w, idx) => (
+                      <p key={idx} className="font-medium">
+                        ⚠️ {w}
+                      </p>
+                    ))}
+                  </div>
+                )}
+              </div>
+
+              {/* Explicit Admin Approval Actions */}
+              <div className="flex flex-wrap items-center justify-between gap-2 pt-1">
+                <span className="text-[11px] text-ink-muted">
+                  * Perubahan harga jual &amp; subsidi ongkir hanya diterapkan ke produk setelah Anda
+                  menyetujuinya:
+                </span>
+                <div className="flex flex-wrap items-center gap-2">
+                  {(profitEval.requiresPriceChange || profitEval.requiresSubsidyChange) && (
+                    <button
+                      type="button"
+                      onClick={handleApproveRecommendation}
+                      className="px-3.5 py-2 rounded-xl bg-primary text-white text-xs font-bold hover:bg-primary-container inline-flex items-center gap-1.5"
+                    >
+                      <CheckCircle2 className="w-3.5 h-3.5" />
+                      <span>
+                        Setujui &amp; Terapkan Rekomendasi Aman (Harga{' '}
+                        {formatRupiah(profitEval.recommendedSalePrice)}, Subsidi{' '}
+                        {formatRupiah(profitEval.recommendedSubsidy)})
+                      </span>
+                    </button>
+                  )}
+
+                  {profitEval.isSafe &&
+                    profitEval.optionalPromoSubsidy > 0 &&
+                    profitEval.optionalPromoSubsidy !== profitEval.appliedSubsidy && (
+                      <button
+                        type="button"
+                        onClick={handleApprovePromoSubsidy}
+                        className="px-3.5 py-2 rounded-xl bg-evergreen text-white text-xs font-semibold hover:opacity-95 inline-flex items-center gap-1.5"
+                      >
+                        <Sparkles className="w-3.5 h-3.5" />
+                        <span>
+                          Setujui Promo Subsidi {formatRupiah(profitEval.optionalPromoSubsidy)}{' '}
+                          (Laba {formatRupiah(profitEval.optionalPromoNetProfit)})
+                        </span>
+                      </button>
+                    )}
+
+                  {Number(shippingSubsidy) > 0 && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setShippingSubsidy('0');
+                        showToast('Subsidi ongkir dikembalikan ke Rp 0 (Ongkir Normal) di form');
+                      }}
+                      className="px-3 py-2 rounded-xl bg-surface border border-border/70 text-xs font-semibold hover:bg-surface-high"
+                    >
+                      Gunakan Ongkir Normal (Subsidi Rp 0)
+                    </button>
+                  )}
+                </div>
+              </div>
+            </div>
+
+            {/* PRODUCT VARIATIONS BUILDER / EDITOR (Warna, Ukuran, dll.) */}
+            <div className="p-5 rounded-2xl bg-surface-low border border-border/60 space-y-4">
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <div>
+                  <h3 className="text-sm font-bold text-primary flex items-center gap-1.5">
+                    <Layers className="w-4 h-4 text-accent-ink" />
+                    <span>Variasi Produk (Warna, Ukuran Baju S/M/L/XL, atau Tipe Lainnya)</span>
+                  </h3>
+                  <p className="text-[11px] text-ink-muted">
+                    Tambahkan dan edit variasi seperti Warna dan Ukuran. Variasi ini akan langsung
+                    tampil dan bisa dipilih pembeli di halaman produk.
+                  </p>
+                </div>
+                <div className="flex flex-wrap gap-2">
+                  <button
+                    type="button"
+                    onClick={() => addClothingSizePresets('Hitam')}
+                    className="px-3 py-1.5 rounded-lg bg-accent-soft text-accent-ink text-[11px] font-semibold hover:bg-accent/30"
+                  >
+                    + Preset Ukuran Baju (S, M, L, XL)
+                  </button>
+                  <button
+                    type="button"
+                    onClick={addBlankVariant}
+                    className="px-3 py-1.5 rounded-lg bg-primary text-white text-[11px] font-semibold hover:bg-primary-container inline-flex items-center gap-1"
+                  >
+                    <Plus className="w-3.5 h-3.5" />
+                    <span>Tambah Variasi</span>
+                  </button>
+                </div>
+              </div>
+
+              {variants.length === 0 ? (
+                <div className="p-4 rounded-xl bg-surface border border-dashed border-border text-center text-xs text-ink-muted">
+                  Belum ada variasi (produk dijual dalam 1 tipe standar). Klik{' '}
+                  <strong>+ Tambah Variasi</strong> atau{' '}
+                  <strong>+ Preset Ukuran Baju (S, M, L, XL)</strong> untuk menambahkan pilihan
+                  warna/ukuran.
+                </div>
+              ) : (
+                <div className="space-y-2.5">
+                  {variants.map((v, idx) => (
+                    <div
+                      key={v.id ?? `var-${idx}`}
+                      className="p-3 rounded-xl bg-surface border border-border/60 grid grid-cols-1 sm:grid-cols-12 gap-2.5 items-end"
+                    >
+                      <div className="sm:col-span-2">
+                        <label className="text-[10px] font-semibold text-ink-muted block mb-1">
+                          Warna
+                        </label>
+                        <input
+                          type="text"
+                          value={v.warna}
+                          onChange={(e) => updateVariantField(idx, 'warna', e.target.value)}
+                          placeholder="Mis. Hitam / Putih"
+                          className="w-full h-8 px-2.5 rounded-lg bg-surface-low border border-border/60 text-xs"
+                        />
+                      </div>
+                      <div className="sm:col-span-2">
+                        <label className="text-[10px] font-semibold text-ink-muted block mb-1">
+                          Ukuran
+                        </label>
+                        <input
+                          type="text"
+                          value={v.ukuran}
+                          onChange={(e) => updateVariantField(idx, 'ukuran', e.target.value)}
+                          placeholder="S / M / L / XL"
+                          className="w-full h-8 px-2.5 rounded-lg bg-surface-low border border-border/60 text-xs"
+                        />
+                      </div>
+                      <div className="sm:col-span-3">
+                        <label className="text-[10px] font-semibold text-ink-muted block mb-1">
+                          Label Tampilan Variasi
+                        </label>
+                        <input
+                          type="text"
+                          value={v.customName}
+                          onChange={(e) => updateVariantField(idx, 'customName', e.target.value)}
+                          placeholder="Hitam • Ukuran L"
+                          className="w-full h-8 px-2.5 rounded-lg bg-surface-low border border-border/60 text-xs font-semibold"
+                        />
+                      </div>
+                      <div className="sm:col-span-2">
+                        <label className="text-[10px] font-semibold text-ink-muted block mb-1">
+                          SKU Variasi
+                        </label>
+                        <input
+                          type="text"
+                          value={v.sku}
+                          onChange={(e) =>
+                            updateVariantField(idx, 'sku', e.target.value.toUpperCase())
+                          }
+                          placeholder="SKU-VAR-1"
+                          className="w-full h-8 px-2.5 rounded-lg bg-surface-low border border-border/60 text-xs font-mono uppercase"
+                        />
+                      </div>
+                      <div className="sm:col-span-2">
+                        <label className="text-[10px] font-semibold text-ink-muted block mb-1">
+                          Harga Khusus (Opsional)
+                        </label>
+                        <input
+                          type="number"
+                          min={0}
+                          value={v.priceOverride}
+                          onChange={(e) => updateVariantField(idx, 'priceOverride', e.target.value)}
+                          placeholder="Ikut harga utama"
+                          className="w-full h-8 px-2.5 rounded-lg bg-surface-low border border-border/60 text-xs"
+                        />
+                      </div>
+                      <div className="sm:col-span-1 flex justify-end">
+                        <button
+                          type="button"
+                          onClick={() => removeVariantRow(idx)}
+                          title="Hapus variasi ini"
+                          className="h-8 px-2.5 rounded-lg bg-danger-soft text-danger hover:bg-danger hover:text-white text-xs inline-flex items-center justify-center"
+                        >
+                          <Trash2 className="w-3.5 h-3.5" />
+                        </button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
             </div>
 
             <div>
@@ -755,7 +1644,7 @@ export default function AdminProductsPage() {
                 rows={4}
                 value={description}
                 onChange={(e) => setDescription(e.target.value)}
-                placeholder="Jelaskan bahan, dimensi, fungsi, dan catatan pengiriman produk..."
+                placeholder="Jelaskan bahan, panduan ukuran (S/M/L/XL), dimensi, dan keunggulan produk..."
                 className="w-full p-3.5 rounded-lg bg-surface-low border border-border/60 text-xs"
               />
             </div>
@@ -768,100 +1657,114 @@ export default function AdminProductsPage() {
                 type="text"
                 value={highlightsText}
                 onChange={(e) => setHighlightsText(e.target.value)}
-                placeholder="Hybrid ANC, Baterai 36 Jam, Kabel USB-C"
+                placeholder="Katun Linen Adem, Jahitan Rapi, Tersedia Ukuran S-XL"
                 className="w-full h-10 px-3.5 rounded-lg bg-surface-low border border-border/60 text-xs"
               />
             </div>
-
-            {/* Pricing & SKU Box */}
-            <div className="p-4 rounded-xl bg-surface-low border border-border/60 grid grid-cols-2 sm:grid-cols-5 gap-3">
-              <div>
-                <label className="text-[11px] font-semibold text-ink block mb-1">
-                  Harga Jual (IDR) <span className="text-danger">*</span>
-                </label>
-                <input
-                  type="number"
-                  required
-                  min={1}
-                  value={salePrice}
-                  onChange={(e) => setSalePrice(e.target.value)}
-                  className="w-full h-9 px-2.5 rounded-lg bg-surface border border-border/60 text-xs font-semibold"
-                />
-              </div>
-              <div>
-                <label className="text-[11px] font-semibold text-ink block mb-1">
-                  Harga Coret (Opsional)
-                </label>
-                <input
-                  type="number"
-                  min={0}
-                  value={compareAtPrice}
-                  onChange={(e) => setCompareAtPrice(e.target.value)}
-                  placeholder="Kosongkan bila normal"
-                  className="w-full h-9 px-2.5 rounded-lg bg-surface border border-border/60 text-xs"
-                />
-              </div>
-              <div>
-                <label className="text-[11px] font-semibold text-ink block mb-1">
-                  SKU Master <span className="text-danger">*</span>
-                </label>
-                <input
-                  type="text"
-                  required
-                  value={sku}
-                  onChange={(e) => setSku(e.target.value.toUpperCase())}
-                  placeholder="PM-ELC-001"
-                  className="w-full h-9 px-2.5 rounded-lg bg-surface border border-border/60 text-xs font-mono uppercase"
-                />
-              </div>
-              <div>
-                <label className="text-[11px] font-semibold text-ink block mb-1">
-                  Stok Gudang (Unit)
-                </label>
-                <input
-                  type="number"
-                  min={0}
-                  value={stockQty}
-                  onChange={(e) => setStockQty(e.target.value)}
-                  className="w-full h-9 px-2.5 rounded-lg bg-surface border border-border/60 text-xs font-semibold"
-                />
-              </div>
-              <div>
-                <label className="text-[11px] font-semibold text-ink block mb-1">
-                  Berat (Gram) <span className="text-danger">*</span>
-                </label>
-                <input
-                  type="number"
-                  required
-                  min={1}
-                  value={weightGram}
-                  onChange={(e) => setWeightGram(e.target.value)}
-                  className="w-full h-9 px-2.5 rounded-lg bg-surface border border-border/60 text-xs"
-                />
-              </div>
-            </div>
           </div>
 
-          {/* Right Column (5 cols): Media Assets & Publication Controls */}
+          {/* Right Column (5 cols): Up to 3 Photos/Videos Media Manager & Publication Controls */}
           <div className="lg:col-span-5 space-y-4">
             <div className="p-4 rounded-xl bg-surface-low border border-border/60 space-y-3">
-              <label className="text-xs font-bold text-ink block">URL Foto Produk Utama</label>
-              <input
-                type="text"
-                value={imageUrl}
-                onChange={(e) => setImageUrl(e.target.value)}
-                placeholder="https://... atau /demo/lamp.jpg"
-                className="w-full h-9 px-3 rounded-lg bg-surface border border-border/60 text-xs"
-              />
-              {imageUrl && (
-                <div className="aspect-[4/3] w-44 rounded-xl overflow-hidden bg-surface border border-border/50">
-                  <img src={imageUrl} alt="Preview" className="w-full h-full object-cover" />
+              <div className="flex items-center justify-between">
+                <div>
+                  <label className="text-xs font-bold text-ink block">
+                    Galeri Foto / Video Produk (Maksimal 3 Media)
+                  </label>
+                  <span className="text-[11px] text-ink-muted">
+                    Bisa menampilkan 1, 2, atau maksimal 3 foto (.jpg/.png/.webp) atau video
+                    (.mp4/.webm).
+                  </span>
                 </div>
-              )}
-              <p className="text-[11px] text-ink-muted">
-                Demi keamanan SSRF, backend menyimpan URL gambar yang tervalidasi tanpa melakukan
-                fetch otomatis ke host eksternal sembarangan.
-              </p>
+                {mediaSlots.length < 3 && (
+                  <button
+                    type="button"
+                    onClick={handleAddMediaSlot}
+                    className="px-2.5 py-1.5 rounded-lg bg-primary text-white text-[11px] font-semibold hover:bg-primary-container inline-flex items-center gap-1 shrink-0"
+                  >
+                    <Plus className="w-3 h-3" />
+                    <span>Slot ({mediaSlots.length}/3)</span>
+                  </button>
+                )}
+              </div>
+
+              <div className="space-y-3">
+                {mediaSlots.map((slot, index) => {
+                  const isVid = isVideoMediaUrl(slot.url);
+                  return (
+                    <div
+                      key={index}
+                      className="p-3 rounded-xl bg-surface border border-border/60 space-y-2"
+                    >
+                      <div className="flex items-center justify-between text-xs">
+                        <span className="font-bold text-primary flex items-center gap-1.5">
+                          {isVid ? <Video className="w-3.5 h-3.5 text-accent-ink" /> : null}
+                          <span>
+                            Media #{index + 1} {index === 0 ? '(Utama)' : '(Tambahan)'}
+                          </span>
+                        </span>
+                        <div className="flex items-center gap-2">
+                          <label className="px-2.5 py-1 rounded-lg bg-surface-low hover:bg-surface-high border border-border/60 text-[11px] font-semibold cursor-pointer inline-flex items-center gap-1">
+                            <Upload className="w-3 h-3" />
+                            <span>
+                              {uploadingSlot === index ? 'Mengunggah...' : 'Unggah File'}
+                            </span>
+                            <input
+                              type="file"
+                              accept="image/jpeg,image/png,image/webp,video/mp4,video/webm"
+                              className="hidden"
+                              onChange={(e) =>
+                                void handleUploadMediaFile(index, e.target.files?.[0] ?? null)
+                              }
+                            />
+                          </label>
+                          {mediaSlots.length > 1 && (
+                            <button
+                              type="button"
+                              onClick={() => handleRemoveMediaSlot(index)}
+                              className="text-[11px] text-danger hover:underline"
+                            >
+                              Hapus
+                            </button>
+                          )}
+                        </div>
+                      </div>
+
+                      <input
+                        type="text"
+                        value={slot.url}
+                        onChange={(e) =>
+                          setMediaSlots((prev) =>
+                            prev.map((s, i) => (i === index ? { ...s, url: e.target.value } : s)),
+                          )
+                        }
+                        placeholder="https://... atau /media/... (.jpg, .png, .webp, .mp4, .webm)"
+                        className="w-full h-8 px-2.5 rounded-lg bg-surface-low border border-border/60 text-xs"
+                      />
+
+                      {slot.url && (
+                        <div className="aspect-[4/3] w-40 rounded-lg overflow-hidden bg-surface-low border border-border/50">
+                          {isVid ? (
+                            <video
+                              src={slot.url}
+                              controls
+                              muted
+                              playsInline
+                              className="w-full h-full object-cover"
+                            />
+                          ) : (
+                            <img
+                              src={slot.url}
+                              alt={`Preview ${index + 1}`}
+                              className="w-full h-full object-cover"
+                            />
+                          )}
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
             </div>
 
             <div className="p-4 rounded-xl bg-surface-low border border-border/60 space-y-3 text-xs">
@@ -931,10 +1834,10 @@ export default function AdminProductsPage() {
       <div className="bg-surface rounded-2xl p-6 border border-border/50 space-y-4">
         <div className="flex flex-wrap items-center justify-between gap-4">
           <div>
-            <h2 className="font-serif text-xl text-primary">Daftar Inventaris Terkini</h2>
+            <h2 className="font-serif text-xl text-primary">Daftar Inventaris, HPP &amp; Variasi</h2>
             <p className="text-xs text-ink-muted">
-              Memantau ketersediaan stok lintas gudang, penyesuaian harga, serta status aktif di
-              etalase pembeli.
+              Memantau harga jual, HPP, subsidi ongkir, jumlah variasi, dan ketersediaan stok lintas
+              gudang.
             </p>
           </div>
 
@@ -980,97 +1883,127 @@ export default function AdminProductsPage() {
           <table className="w-full text-left text-xs">
             <thead className="bg-surface-low text-ink-muted uppercase text-[10px]">
               <tr>
-                <th className="p-3">Produk Kurasi</th>
-                <th className="p-3">Kategori</th>
-                <th className="p-3">SKU</th>
+                <th className="p-3">Produk</th>
+                <th className="p-3">SKU &amp; Variasi</th>
                 <th className="p-3">Harga Jual</th>
+                <th className="p-3">HPP &amp; Subsidi</th>
                 <th className="p-3">Stok Agregat</th>
-                <th className="p-3">Pemasok / Gudang</th>
+                <th className="p-3">Media</th>
                 <th className="p-3">Status Live</th>
                 <th className="p-3 text-right">Aksi</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-border/40">
-              {products.map((p) => (
-                <tr key={p.id} className="hover:bg-surface-low/50">
-                  <td className="p-3">
-                    <div className="flex items-center gap-3">
-                      <img
-                        src={p.images[0]?.url || '/demo/lamp.jpg'}
-                        alt={p.name}
-                        className="w-11 h-11 rounded-lg object-cover bg-surface-low shrink-0"
-                      />
-                      <div>
-                        <p className="font-semibold text-ink">{p.name}</p>
-                        <div className="flex items-center gap-1.5 mt-0.5">
-                          {p.isDemo && (
-                            <span className="px-1.5 py-0.2 rounded bg-primary/10 text-primary text-[10px] font-bold">
-                              DEMO
-                            </span>
-                          )}
-                          <span className="text-[11px] text-ink-muted">{p.weightGram}g</span>
+              {products.map((p) => {
+                const effHpp =
+                  p.costPrice && p.costPrice > 0 ? p.costPrice : (p.offers[0]?.costPrice ?? 0);
+                return (
+                  <tr key={p.id} className="hover:bg-surface-low/50">
+                    <td className="p-3">
+                      <div className="flex items-center gap-3">
+                        {isVideoMediaUrl(p.images[0]?.url) ? (
+                          <video
+                            src={p.images[0]?.url}
+                            muted
+                            className="w-11 h-11 rounded-lg object-cover bg-surface-low shrink-0"
+                          />
+                        ) : (
+                          <img
+                            src={p.images[0]?.url || '/demo/lamp.jpg'}
+                            alt={p.name}
+                            className="w-11 h-11 rounded-lg object-cover bg-surface-low shrink-0"
+                          />
+                        )}
+                        <div>
+                          <p className="font-semibold text-ink">{p.name}</p>
+                          <div className="flex items-center gap-1.5 mt-0.5 text-[11px] text-ink-muted">
+                            <span>{p.category?.name || 'Tanpa Kategori'}</span>
+                            <span>•</span>
+                            <span>{p.weightGram}g</span>
+                          </div>
                         </div>
                       </div>
-                    </div>
-                  </td>
-                  <td className="p-3 text-ink-muted">{p.category?.name || '-'}</td>
-                  <td className="p-3 font-mono font-semibold">{p.sku}</td>
-                  <td className="p-3">
-                    <span className="font-bold text-primary block">
-                      {formatRupiah(p.salePrice)}
-                    </span>
-                    {p.compareAtPrice && (
-                      <span className="text-[11px] text-ink-muted line-through">
-                        {formatRupiah(p.compareAtPrice)}
+                    </td>
+                    <td className="p-3">
+                      <span className="font-mono font-semibold block">{p.sku}</span>
+                      <span className="text-[11px] text-ink-muted">
+                        {p.variants?.length
+                          ? `${p.variants.length} variasi (${p.variants
+                              .slice(0, 3)
+                              .map((v) => v.name)
+                              .join(', ')})`
+                          : 'Standar (1 opsi)'}
                       </span>
-                    )}
-                  </td>
-                  <td className="p-3">
-                    <StatusBadge
-                      label={`${p.totalStock} Unit`}
-                      tone={p.totalStock > 5 ? 'success' : p.totalStock > 0 ? 'accent' : 'danger'}
-                    />
-                  </td>
-                  <td className="p-3 text-[11px] text-ink-muted">
-                    {p.offers.length === 0
-                      ? 'Belum ada offer'
-                      : p.offers.map((o) => `${o.warehouse.city} (${o.stockQty})`).join(', ')}
-                  </td>
-                  <td className="p-3">
-                    <button
-                      type="button"
-                      onClick={() => handleToggleLive(p)}
-                      className={`px-2.5 py-1 rounded-full text-[11px] font-bold ${
-                        p.status === 'ACTIVE'
-                          ? 'bg-evergreen text-white'
-                          : 'bg-surface-high text-ink-muted'
-                      }`}
-                    >
-                      {p.status}
-                    </button>
-                  </td>
-                  <td className="p-3 text-right space-x-1">
-                    <button
-                      type="button"
-                      onClick={() => startEdit(p)}
-                      title="Edit Produk"
-                      className="p-1.5 rounded-lg hover:bg-surface-high text-ink"
-                    >
-                      <Edit3 className="w-4 h-4 inline" />
-                    </button>
-                    {p.status !== 'ARCHIVED' && (
+                    </td>
+                    <td className="p-3">
+                      <span className="font-bold text-primary block">
+                        {formatRupiah(p.salePrice)}
+                      </span>
+                      {p.compareAtPrice && (
+                        <span className="text-[11px] text-ink-muted line-through">
+                          {formatRupiah(p.compareAtPrice)}
+                        </span>
+                      )}
+                    </td>
+                    <td className="p-3 text-[11px]">
+                      <span className="block text-ink">
+                        HPP: <strong>{effHpp > 0 ? formatRupiah(effHpp) : 'Belum diisi'}</strong>
+                      </span>
+                      {p.shippingSubsidy > 0 ? (
+                        <span className="text-evergreen font-semibold inline-flex items-center gap-1">
+                          <Truck className="w-3 h-3" /> Subsidi {formatRupiah(p.shippingSubsidy)}
+                        </span>
+                      ) : (
+                        <span className="text-ink-muted">Ongkir Normal</span>
+                      )}
+                    </td>
+                    <td className="p-3">
+                      <StatusBadge
+                        label={`${p.totalStock} Unit`}
+                        tone={
+                          p.totalStock > 5 ? 'success' : p.totalStock > 0 ? 'accent' : 'danger'
+                        }
+                      />
+                    </td>
+                    <td className="p-3 text-[11px] text-ink-muted">
+                      {Math.min(3, p.images?.length || 0)}/3 file
+                    </td>
+                    <td className="p-3">
                       <button
                         type="button"
-                        onClick={() => handleArchive(p)}
-                        title="Arsipkan Produk"
-                        className="p-1.5 rounded-lg hover:bg-danger-soft text-danger"
+                        onClick={() => handleToggleLive(p)}
+                        className={`px-2.5 py-1 rounded-full text-[11px] font-bold ${
+                          p.status === 'ACTIVE'
+                            ? 'bg-evergreen text-white'
+                            : 'bg-surface-high text-ink-muted'
+                        }`}
                       >
-                        <Archive className="w-4 h-4 inline" />
+                        {p.status}
                       </button>
-                    )}
-                  </td>
-                </tr>
-              ))}
+                    </td>
+                    <td className="p-3 text-right space-x-1">
+                      <button
+                        type="button"
+                        onClick={() => startEdit(p)}
+                        title="Edit Produk, Variasi & Laba"
+                        className="p-1.5 rounded-lg hover:bg-surface-high text-ink"
+                      >
+                        <Edit3 className="w-4 h-4 inline" />
+                      </button>
+                      {p.status !== 'ARCHIVED' && (
+                        <button
+                          type="button"
+                          onClick={() => handleArchive(p)}
+                          title="Arsipkan Produk"
+                          className="p-1.5 rounded-lg hover:bg-danger-soft text-danger"
+                        >
+                          <Archive className="w-4 h-4 inline" />
+                        </button>
+                      )}
+                    </td>
+                  </tr>
+                );
+              })}
             </tbody>
           </table>
         </div>
@@ -1078,4 +2011,3 @@ export default function AdminProductsPage() {
     </AdminShell>
   );
 }
-

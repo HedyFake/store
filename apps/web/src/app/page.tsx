@@ -45,6 +45,8 @@ function CategoryIcon({ name }: { name: string | null }) {
   }
 }
 
+const HOME_CACHE_KEY = 'pm_home_cache_v1';
+
 export default function HomePage() {
   const { config } = useStore();
   const [products, setProducts] = useState<PublicProduct[]>([]);
@@ -52,6 +54,22 @@ export default function HomePage() {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
+    try {
+      const cached = sessionStorage.getItem(HOME_CACHE_KEY);
+      if (cached) {
+        const parsed = JSON.parse(cached) as { products?: PublicProduct[]; categories?: CategoryItem[] };
+        if (Array.isArray(parsed.products) && parsed.products.length > 0) {
+          setProducts(parsed.products);
+          setLoading(false);
+        }
+        if (Array.isArray(parsed.categories)) {
+          setCategories(parsed.categories);
+        }
+      }
+    } catch {
+      /* ignore */
+    }
+
     Promise.all([
       apiFetch<{ items: PublicProduct[]; total: number }>('/api/products?pageSize=8&sort=popular'),
       apiFetch<CategoryItem[]>('/api/categories'),
@@ -59,6 +77,14 @@ export default function HomePage() {
       .then(([prodRes, catRes]) => {
         setProducts(prodRes.items);
         setCategories(catRes);
+        try {
+          sessionStorage.setItem(
+            HOME_CACHE_KEY,
+            JSON.stringify({ products: prodRes.items, categories: catRes }),
+          );
+        } catch {
+          /* ignore */
+        }
       })
       .catch(() => undefined)
       .finally(() => setLoading(false));

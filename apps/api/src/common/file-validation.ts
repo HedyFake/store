@@ -3,7 +3,10 @@ import 'multer';
 /**
  * File-type detection from magic bytes + structural sanity checks. Client MIME/extension are never trusted.
  */
-export type DetectedType = { mime: 'image/jpeg' | 'image/png' | 'application/pdf' | 'image/webp'; ext: string };
+export type DetectedType = {
+  mime: 'image/jpeg' | 'image/png' | 'application/pdf' | 'image/webp' | 'video/mp4' | 'video/webm';
+  ext: string;
+};
 
 export function detectFileType(buf: Buffer): DetectedType | null {
   if (buf.length >= 4 && buf[0] === 0xff && buf[1] === 0xd8 && buf[2] === 0xff) return { mime: 'image/jpeg', ext: 'jpg' };
@@ -20,6 +23,9 @@ export function detectFileType(buf: Buffer): DetectedType | null {
   if (buf.length >= 5 && buf.toString('ascii', 0, 5) === '%PDF-') return { mime: 'application/pdf', ext: 'pdf' };
   if (buf.length >= 12 && buf.toString('ascii', 0, 4) === 'RIFF' && buf.toString('ascii', 8, 12) === 'WEBP')
     return { mime: 'image/webp', ext: 'webp' };
+  if (buf.length >= 12 && buf.toString('ascii', 4, 8) === 'ftyp') return { mime: 'video/mp4', ext: 'mp4' };
+  if (buf.length >= 4 && buf[0] === 0x1a && buf[1] === 0x45 && buf[2] === 0xdf && buf[3] === 0xa3)
+    return { mime: 'video/webm', ext: 'webm' };
   return null;
 }
 
@@ -38,6 +44,9 @@ export function isStructurallyValid(buf: Buffer, type: DetectedType): boolean {
     }
     case 'image/webp':
       return buf.readUInt32LE(4) + 8 <= buf.length + 1;
+    case 'video/mp4':
+    case 'video/webm':
+      return buf.length >= 64;
   }
 }
 
@@ -46,6 +55,8 @@ const EXT_ALIASES: Record<string, string[]> = {
   'image/png': ['png'],
   'application/pdf': ['pdf'],
   'image/webp': ['webp'],
+  'video/mp4': ['mp4', 'm4v', 'mov'],
+  'video/webm': ['webm'],
 };
 
 export interface ValidateOptions {

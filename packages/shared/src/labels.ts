@@ -40,6 +40,7 @@ export const paymentMethodLabel: Record<PaymentMethod, string> = {
   QRIS_GATEWAY: 'QRIS Otomatis',
   VIRTUAL_ACCOUNT: 'Virtual Account',
   COD: 'Bayar di Tempat (COD)',
+  WHATSAPP: 'Pembayaran via WhatsApp (+6285141784243)',
 };
 
 export const supplierOrderStatusLabel: Record<SupplierOrderStatus, string> = {

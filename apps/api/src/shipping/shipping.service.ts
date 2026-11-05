@@ -44,6 +44,33 @@ const FALLBACK_DESTINATIONS: DomesticDestination[] = [
     postalCode: '10310',
   },
   {
+    id: '17345',
+    label: 'Grogol Petamburan, Jakarta Barat, DKI Jakarta (11470)',
+    province: 'DKI Jakarta',
+    city: 'Jakarta Barat',
+    district: 'Grogol Petamburan',
+    subdistrict: 'Tanjung Duren',
+    postalCode: '11470',
+  },
+  {
+    id: '17610',
+    label: 'Cakung, Jakarta Timur, DKI Jakarta (13910)',
+    province: 'DKI Jakarta',
+    city: 'Jakarta Timur',
+    district: 'Cakung',
+    subdistrict: 'Cakung Timur',
+    postalCode: '13910',
+  },
+  {
+    id: '17701',
+    label: 'Kelapa Gading, Jakarta Utara, DKI Jakarta (14240)',
+    province: 'DKI Jakarta',
+    city: 'Jakarta Utara',
+    district: 'Kelapa Gading',
+    subdistrict: 'Kelapa Gading Barat',
+    postalCode: '14240',
+  },
+  {
     id: '6984',
     label: 'Coblong, Kota Bandung, Jawa Barat (40132)',
     province: 'Jawa Barat',
@@ -53,13 +80,67 @@ const FALLBACK_DESTINATIONS: DomesticDestination[] = [
     postalCode: '40132',
   },
   {
-    id: '42915',
-    label: 'Gubeng, Kota Surabaya, Jawa Timur (60281)',
-    province: 'Jawa Timur',
-    city: 'Kota Surabaya',
-    district: 'Gubeng',
-    subdistrict: 'Airlangga',
-    postalCode: '60281',
+    id: '8120',
+    label: 'Cibinong, Kab. Bogor, Jawa Barat (16911)',
+    province: 'Jawa Barat',
+    city: 'Bogor',
+    district: 'Cibinong',
+    subdistrict: 'Pakansari',
+    postalCode: '16911',
+  },
+  {
+    id: '11420',
+    label: 'Beji, Kota Depok, Jawa Barat (16421)',
+    province: 'Jawa Barat',
+    city: 'Depok',
+    district: 'Beji',
+    subdistrict: 'Pondok Cina',
+    postalCode: '16421',
+  },
+  {
+    id: '7412',
+    label: 'Bekasi Selatan, Kota Bekasi, Jawa Barat (17141)',
+    province: 'Jawa Barat',
+    city: 'Bekasi',
+    district: 'Bekasi Selatan',
+    subdistrict: 'Pekayon Jaya',
+    postalCode: '17141',
+  },
+  {
+    id: '45120',
+    label: 'Serpong, Tangerang Selatan, Banten (15310)',
+    province: 'Banten',
+    city: 'Tangerang Selatan',
+    district: 'Serpong',
+    subdistrict: 'BSD',
+    postalCode: '15310',
+  },
+  {
+    id: '44910',
+    label: 'Karawaci, Kota Tangerang, Banten (15115)',
+    province: 'Banten',
+    city: 'Tangerang',
+    district: 'Karawaci',
+    subdistrict: 'Karawaci',
+    postalCode: '15115',
+  },
+  {
+    id: '33210',
+    label: 'Semarang Tengah, Kota Semarang, Jawa Tengah (50131)',
+    province: 'Jawa Tengah',
+    city: 'Semarang',
+    district: 'Semarang Tengah',
+    subdistrict: 'Pekunden',
+    postalCode: '50131',
+  },
+  {
+    id: '34810',
+    label: 'Laweyan, Kota Surakarta (Solo), Jawa Tengah (57141)',
+    province: 'Jawa Tengah',
+    city: 'Surakarta',
+    district: 'Laweyan',
+    subdistrict: 'Purwosari',
+    postalCode: '57141',
   },
   {
     id: '31597',
@@ -71,6 +152,42 @@ const FALLBACK_DESTINATIONS: DomesticDestination[] = [
     postalCode: '55281',
   },
   {
+    id: '31710',
+    label: 'Gondokusuman, Kota Yogyakarta, DI Yogyakarta (55221)',
+    province: 'DI Yogyakarta',
+    city: 'Yogyakarta',
+    district: 'Gondokusuman',
+    subdistrict: 'Terban',
+    postalCode: '55221',
+  },
+  {
+    id: '42915',
+    label: 'Gubeng, Kota Surabaya, Jawa Timur (60281)',
+    province: 'Jawa Timur',
+    city: 'Kota Surabaya',
+    district: 'Gubeng',
+    subdistrict: 'Airlangga',
+    postalCode: '60281',
+  },
+  {
+    id: '41210',
+    label: 'Waru, Kab. Sidoarjo, Jawa Timur (61256)',
+    province: 'Jawa Timur',
+    city: 'Sidoarjo',
+    district: 'Waru',
+    subdistrict: 'Waru',
+    postalCode: '61256',
+  },
+  {
+    id: '38910',
+    label: 'Lowokwaru, Kota Malang, Jawa Timur (65141)',
+    province: 'Jawa Timur',
+    city: 'Malang',
+    district: 'Lowokwaru',
+    subdistrict: 'Jatimulyo',
+    postalCode: '65141',
+  },
+  {
     id: '5132',
     label: 'Denpasar Selatan, Kota Denpasar, Bali (80228)',
     province: 'Bali',
@@ -79,10 +196,52 @@ const FALLBACK_DESTINATIONS: DomesticDestination[] = [
     subdistrict: 'Sanur',
     postalCode: '80228',
   },
+  {
+    id: '24110',
+    label: 'Medan Baru, Kota Medan, Sumatera Utara (20152)',
+    province: 'Sumatera Utara',
+    city: 'Medan',
+    district: 'Medan Baru',
+    subdistrict: 'Babura',
+    postalCode: '20152',
+  },
+  {
+    id: '28110',
+    label: 'Ilir Timur I, Kota Palembang, Sumatera Selatan (30121)',
+    province: 'Sumatera Selatan',
+    city: 'Palembang',
+    district: 'Ilir Timur I',
+    subdistrict: '20 Ilir',
+    postalCode: '30121',
+  },
+  {
+    id: '36110',
+    label: 'Panakkukang, Kota Makassar, Sulawesi Selatan (90231)',
+    province: 'Sulawesi Selatan',
+    city: 'Makassar',
+    district: 'Panakkukang',
+    subdistrict: 'Masale',
+    postalCode: '90231',
+  },
+  {
+    id: '19810',
+    label: 'Balikpapan Selatan, Kota Balikpapan, Kalimantan Timur (76114)',
+    province: 'Kalimantan Timur',
+    city: 'Balikpapan',
+    district: 'Balikpapan Selatan',
+    subdistrict: 'Sepinggan',
+    postalCode: '76114',
+  },
 ];
 
 @Injectable()
 export class ShippingService {
+  private readonly destCache = new Map<
+    string,
+    { data: { items: DomesticDestination[]; source: 'rajaongkir' | 'local' }; expiresAt: number }
+  >();
+  private readonly quoteCache = new Map<string, { data: ShippingOption[]; expiresAt: number }>();
+
   constructor(private readonly settings: SettingsService) {}
 
   private isRajaOngkirEnabled(): boolean {
@@ -95,6 +254,11 @@ export class ShippingService {
     if (q.length < 2) {
       return { items: FALLBACK_DESTINATIONS, source: 'local' };
     }
+    const cacheKey = q.toLowerCase();
+    const cached = this.destCache.get(cacheKey);
+    if (cached && cached.expiresAt > Date.now()) {
+      return cached.data;
+    }
     if (this.isRajaOngkirEnabled()) {
       try {
         const e = env();
@@ -104,7 +268,7 @@ export class ShippingService {
         url.searchParams.set('offset', '0');
         const res = await fetch(url.toString(), {
           headers: { key: e.RAJAONGKIR_API_KEY, Accept: 'application/json' },
-          signal: AbortSignal.timeout(7000),
+          signal: AbortSignal.timeout(3500),
         });
         if (res.ok) {
           const json = (await res.json()) as {
@@ -119,8 +283,8 @@ export class ShippingService {
             }>;
           };
           if (Array.isArray(json.data) && json.data.length > 0) {
-            return {
-              source: 'rajaongkir',
+            const result = {
+              source: 'rajaongkir' as const,
               items: json.data.map((d) => ({
                 id: String(d.id ?? ''),
                 label:
@@ -133,6 +297,8 @@ export class ShippingService {
                 postalCode: d.zip_code ?? '',
               })),
             };
+            this.destCache.set(cacheKey, { data: result, expiresAt: Date.now() + 300_000 });
+            return result;
           }
         }
       } catch (err) {
@@ -141,8 +307,31 @@ export class ShippingService {
     }
 
     const lower = q.toLowerCase();
-    const filtered = FALLBACK_DESTINATIONS.filter((d) => d.label.toLowerCase().includes(lower));
+    const filtered = FALLBACK_DESTINATIONS.filter(
+      (d) =>
+        d.label.toLowerCase().includes(lower) ||
+        d.city.toLowerCase().includes(lower) ||
+        d.province.toLowerCase().includes(lower),
+    );
     return { items: filtered.length ? filtered : FALLBACK_DESTINATIONS, source: 'local' };
+  }
+
+  /**
+   * Automatically resolves the best RajaOngkir origin ID & province for a given city/regency name.
+   */
+  async resolveOriginByCity(city: string): Promise<DomesticDestination | null> {
+    const clean = (city ?? '').trim();
+    if (!clean) return null;
+    const { items } = await this.searchDestinations(clean);
+    if (!items || items.length === 0) return null;
+    const lower = clean.toLowerCase();
+    const exactCityMatch = items.find(
+      (i) =>
+        i.city.toLowerCase() === lower ||
+        i.city.toLowerCase().includes(lower) ||
+        lower.includes(i.city.toLowerCase()),
+    );
+    return exactCityMatch ?? items[0];
   }
 
   async quoteGroup(params: {
@@ -155,6 +344,12 @@ export class ShippingService {
     const weight = Math.max(100, params.weightGram);
 
     if (this.isRajaOngkirEnabled() && cfg.provider === 'rajaongkir' && params.originId && params.destinationId) {
+      const couriersJoined = (cfg.couriers.length ? cfg.couriers : ['jne', 'sicepat', 'jnt']).join(':');
+      const qKey = `${params.originId}:${params.destinationId}:${Math.ceil(weight / 500)}:${couriersJoined}`;
+      const hit = this.quoteCache.get(qKey);
+      if (hit && hit.expiresAt > Date.now()) {
+        return hit.data;
+      }
       try {
         const e = env();
         const url = `${e.RAJAONGKIR_BASE_URL.replace(/\/$/, '')}/calculate/domestic-cost`;
@@ -162,7 +357,7 @@ export class ShippingService {
           origin: params.originId,
           destination: params.destinationId,
           weight: String(weight),
-          courier: (cfg.couriers.length ? cfg.couriers : ['jne', 'sicepat', 'jnt']).join(':'),
+          courier: couriersJoined,
           price: 'lowest',
         });
         const res = await fetch(url, {
@@ -173,7 +368,7 @@ export class ShippingService {
             Accept: 'application/json',
           },
           body: body.toString(),
-          signal: AbortSignal.timeout(8000),
+          signal: AbortSignal.timeout(3500),
         });
         if (res.ok) {
           const json = (await res.json()) as {
@@ -215,7 +410,10 @@ export class ShippingService {
                   source: 'rajaongkir' as const,
                 };
               });
-            if (mapped.length > 0) return mapped;
+            if (mapped.length > 0) {
+              this.quoteCache.set(qKey, { data: mapped, expiresAt: Date.now() + 300_000 });
+              return mapped;
+            }
           }
         }
       } catch (err) {

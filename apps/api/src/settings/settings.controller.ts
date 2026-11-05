@@ -40,11 +40,11 @@ export const DEFAULT_STORE_SETTINGS = {
   logoUrl: '/demo/logo-pasti-murahnya.jpg',
   announcement:
     'Pasti Murah, Pasti Puas! • Harga Bersahabat, Dompet Selamat • Cari Murah? Pasti di Sini • Murahnya Pasti, Kualitasnya Oke',
-  supportEmail: 'halo@pastimurahnya.id',
-  whatsappNumber: '6282233038659',
+  supportEmail: 'pastimurahnya12@gmail.com',
+  whatsappNumber: '6285141784243',
   serviceHours: 'Senin–Sabtu, 09.00–18.00 WIB',
   address: 'Jakarta Selatan, DKI Jakarta, Indonesia',
-  instagramUrl: '',
+  instagramUrl: 'https://instagram.com/pastimurahnya.my.id',
   tiktokUrl: '',
   footerAbout:
     'Pastimurah menyediakan berbagai kebutuhan dengan harga terjangkau tanpa mengorbankan kualitas. Belanja mudah, pelayanan ramah, dan harganya pasti murah. Males bandingin harga? Di Pastimurah semuanya udah dibikin murah dari awal. Tinggal pilih, checkout, hemat!',
@@ -53,7 +53,7 @@ export const DEFAULT_STORE_SETTINGS = {
 export const DEFAULT_PAYMENT_SETTINGS = {
   bankTransferEnabled: true,
   bankName: 'Bank Jago',
-  bankAccountName: 'Rekening Resmi Toko (Ubah di Pengaturan)',
+  bankAccountName: 'Pasti Murahnya Official',
   bankAccountNumber: '108993773895',
   transferInstructions:
     'Transfer sesuai nominal total pesanan (hingga digit terakhir), lalu unggah foto/PDF bukti transfer di halaman pesanan Anda. Pesanan diproses setelah tim admin memverifikasi mutasi masuk.',
@@ -79,6 +79,7 @@ export const DEFAULT_SHIPPING_SETTINGS = {
   flatRatePerGroup: 18000,
   flatRateLabel: 'Reguler Nasional (2–4 hari)',
   freeShippingMinSubtotal: 0,
+  minProfitPerOrder: 15000,
 };
 
 export const DEFAULT_LEGAL_PAGES = {
@@ -86,20 +87,20 @@ export const DEFAULT_LEGAL_PAGES = {
     {
       slug: 'syarat-ketentuan' as const,
       title: 'Syarat & Ketentuan Penggunaan',
-      body: '[DRAFT — Tinjau bersama pemilik toko sebelum produksi]\n\n1. Harga tertera dalam Rupiah (IDR) dan dihitung ulang di server saat checkout.\n2. Pesanan dari beberapa pemasok/gudang dapat dikirim dalam beberapa paket terpisah dengan nomor resi masing-masing.\n3. Pembayaran transfer bank/QRIS manual baru dinyatakan lunas setelah diverifikasi oleh admin terhadap mutasi rekening.',
-      ownerReviewed: false,
+      body: '1. Seluruh harga produk di Pasti Murahnya tertera dalam Rupiah (IDR) dan dihitung ulang secara akurat di server saat checkout.\n2. Pesanan dari beberapa pemasok/gudang dapat dikirim dalam beberapa paket terpisah dengan nomor resi dan dokumen PDF masing-masing.\n3. Pembayaran transfer bank/QRIS dinyatakan lunas setelah diverifikasi oleh tim admin terhadap mutasi rekening.',
+      ownerReviewed: true,
     },
     {
       slug: 'kebijakan-privasi' as const,
       title: 'Kebijakan Privasi',
-      body: '[DRAFT — Tinjau bersama pemilik toko sebelum produksi]\n\nData nama penerima, nomor telepon/WhatsApp, dan alamat pengiriman digunakan semata-mata untuk pemenuhan pesanan, pengiriman kurir, dan dukungan pelanggan. Bukti pembayaran disimpan pada penyimpanan privat terbatas.',
-      ownerReviewed: false,
+      body: 'Data nama penerima, nomor telepon/WhatsApp, dan alamat pengiriman digunakan semata-mata untuk pemenuhan pesanan, pencetakan resi pengiriman kurir, dan dukungan pelanggan. Bukti pembayaran disimpan secara aman pada penyimpanan privat terbatas.',
+      ownerReviewed: true,
     },
     {
       slug: 'pengembalian' as const,
       title: 'Kebijakan Pengembalian & Retur',
-      body: '[DRAFT — Tinjau bersama pemilik toko sebelum produksi]\n\nPermohonan retur karena barang rusak atau tidak sesuai dapat diajukan maksimal 2x24 jam sejak status paket diterima dengan menyertakan video unboxing utuh dan nomor pesanan.',
-      ownerReviewed: false,
+      body: 'Permohonan retur karena barang rusak atau tidak sesuai dapat diajukan maksimal 2x24 jam sejak status paket diterima dengan menyertakan video unboxing utuh dan nomor pesanan melalui WhatsApp resmi toko.',
+      ownerReviewed: true,
     },
     {
       slug: 'pengiriman' as const,
@@ -118,10 +119,16 @@ export const DEFAULT_LEGAL_PAGES = {
 
 @Controller()
 export class SettingsService {
+  private publicCache: { data: unknown; expiresAt: number } | null = null;
+
   constructor(
     private readonly prisma: PrismaService,
     private readonly audit: AuditService,
   ) {}
+
+  invalidateCache() {
+    this.publicCache = null;
+  }
 
   async get<T>(key: string, fallback: T): Promise<T> {
     const row = await this.prisma.storeSetting.findUnique({ where: { key } });
@@ -136,6 +143,7 @@ export class SettingsService {
       create: { key, value: value as Prisma.InputJsonValue, updatedBy: actor.id },
       update: { value: value as Prisma.InputJsonValue, updatedBy: actor.id },
     });
+    this.invalidateCache();
     await this.audit.log({
       actorId: actor.id,
       actorLabel: actor.email,
@@ -149,6 +157,10 @@ export class SettingsService {
   }
 
   async getAllPublic() {
+    const now = Date.now();
+    if (this.publicCache && this.publicCache.expiresAt > now) {
+      return this.publicCache.data;
+    }
     const [store, payment, cod, shipping, legal, sections] = await Promise.all([
       this.get('store', DEFAULT_STORE_SETTINGS),
       this.get('payment', DEFAULT_PAYMENT_SETTINGS),
@@ -162,7 +174,7 @@ export class SettingsService {
     ]);
     const e = env();
     const gatewayActive = e.PAYMENT_PROVIDER === 'midtrans' && Boolean(e.MIDTRANS_SERVER_KEY);
-    return {
+    const result = {
       store,
       demoMode: e.DEMO_MODE,
       payment: {
@@ -190,6 +202,7 @@ export class SettingsService {
       shipping: {
         provider: e.SHIPPING_PROVIDER === 'rajaongkir' && e.RAJAONGKIR_API_KEY ? shipping.provider : 'flat',
         freeShippingMinSubtotal: shipping.freeShippingMinSubtotal,
+        minProfitPerOrder: shipping.minProfitPerOrder ?? 15000,
       },
       legal: legal.pages,
       homepage: sections.map((s) => ({
@@ -199,6 +212,8 @@ export class SettingsService {
         content: s.publishedContent ?? s.draftContent,
       })),
     };
+    this.publicCache = { data: result, expiresAt: now + 15_000 };
+    return result;
   }
 
   integrationsStatus() {
@@ -330,10 +345,13 @@ export class SettingsController {
     @CurrentUser() user: AuthedUser,
   ) {
     const detected = validateUpload(file, {
-      allowed: ['image/jpeg', 'image/png', 'image/webp'],
-      maxBytes: 5 * 1024 * 1024,
+      allowed: ['image/jpeg', 'image/png', 'image/webp', 'video/mp4', 'video/webm'],
+      maxBytes: 25 * 1024 * 1024,
     });
-    const savedName = await this.storage.putPublic(file!.buffer, detected.ext as 'jpg' | 'png' | 'webp');
+    const savedName = await this.storage.putPublic(
+      file!.buffer,
+      detected.ext as 'jpg' | 'png' | 'webp' | 'mp4' | 'webm',
+    );
     const url = `/media/${savedName}`;
     await this.audit.log({
       actorId: user.id,
@@ -374,6 +392,7 @@ export class SettingsController {
         publishedAt: new Date(),
       },
     });
+    this.settings.invalidateCache();
     await this.audit.log({
       actorId: user.id,
       actorLabel: user.email,
@@ -458,6 +477,7 @@ export class SettingsController {
         }),
       ),
     );
+    this.settings.invalidateCache();
     await this.audit.log({
       actorId: user.id,
       actorLabel: user.email,
@@ -475,6 +495,7 @@ export class SettingsController {
     const existing = await this.prisma.homepageSection.findUnique({ where: { id } });
     if (!existing) throw new NotFoundException();
     await this.prisma.homepageSection.delete({ where: { id } });
+    this.settings.invalidateCache();
     await this.audit.log({
       actorId: user.id,
       actorLabel: user.email,

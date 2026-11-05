@@ -1,5 +1,12 @@
 // Mirrors prisma enums so the web app does not depend on @prisma/client.
-export const PaymentMethods = ['BANK_TRANSFER', 'QRIS_STATIC', 'QRIS_GATEWAY', 'VIRTUAL_ACCOUNT', 'COD'] as const;
+export const PaymentMethods = [
+  'BANK_TRANSFER',
+  'QRIS_STATIC',
+  'QRIS_GATEWAY',
+  'VIRTUAL_ACCOUNT',
+  'COD',
+  'WHATSAPP',
+] as const;
 export type PaymentMethod = (typeof PaymentMethods)[number];
 
 export const OrderStatuses = [

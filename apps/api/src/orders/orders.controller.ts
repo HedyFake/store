@@ -83,9 +83,11 @@ interface QuotedGroup {
     costPrice: number;
     lineTotal: number;
     weightGram: number;
+    shippingSubsidy: number;
   }>;
   itemsSubtotal: number;
   totalWeightGram: number;
+  shippingSubsidyTotal: number;
   shippingOptions: ShippingOption[];
 }
 
@@ -193,10 +195,12 @@ export class OrdersController {
         items: [],
         itemsSubtotal: 0,
         totalWeightGram: 0,
+        shippingSubsidyTotal: 0,
       };
       existingGroup.codSupported = existingGroup.codSupported && offerCodOk;
       const lineTotal = unitPrice * line.quantity;
       const lineWeight = Math.max(1, product.weightGram) * line.quantity;
+      const itemSubsidy = Math.max(0, product.shippingSubsidy ?? 0);
       existingGroup.items.push({
         productId: product.id,
         variantId: line.variantId,
@@ -211,21 +215,27 @@ export class OrdersController {
         costPrice: chosen.costPrice,
         lineTotal,
         weightGram: product.weightGram,
+        shippingSubsidy: itemSubsidy,
       });
       existingGroup.itemsSubtotal += lineTotal;
       existingGroup.totalWeightGram += lineWeight;
+      existingGroup.shippingSubsidyTotal += itemSubsidy * line.quantity;
       groupMap.set(groupKey, existingGroup);
     }
 
     const groups: QuotedGroup[] = [];
     let seq = 1;
     for (const g of groupMap.values()) {
-      const shippingOptions = await this.shipping.quoteGroup({
+      const rawOptions = await this.shipping.quoteGroup({
         originId: g.shippingOriginId,
         originCity: g.warehouseCity,
         destinationId,
         weightGram: g.totalWeightGram,
       });
+      const shippingOptions = rawOptions.map((opt) => ({
+        ...opt,
+        cost: Math.max(0, opt.cost - g.shippingSubsidyTotal),
+      }));
       groups.push({ ...g, sequence: seq++, shippingOptions });
     }
 
@@ -320,6 +330,7 @@ export class OrdersController {
         QRIS_GATEWAY: gatewayActive && e.ENABLE_QRIS,
         VIRTUAL_ACCOUNT: gatewayActive && e.ENABLE_VIRTUAL_ACCOUNT,
         COD: codAllowed,
+        WHATSAPP: true,
       },
       groups: allocation.groups.map((g) => ({
         groupKey: g.groupKey,
@@ -812,7 +823,7 @@ export class OrdersController {
     const order = await this.verifyGuestOrderAccess(orderNumber, key);
     const [payCfg, storeCfg] = await Promise.all([
       this.settings.get('payment', DEFAULT_PAYMENT_SETTINGS),
-      this.settings.get('store', { whatsappNumber: '6282233038659', storeName: 'Toko' }),
+      this.settings.get('store', { whatsappNumber: '6285141784243', storeName: 'Pasti Murahnya' }),
     ]);
 
     const latestPayment = order.payments[0];
@@ -860,7 +871,13 @@ export class OrdersController {
                 instructions: payCfg.transferInstructions,
                 maxProofBytes: payCfg.proofMaxBytes,
               }
-            : null,
+            : order.paymentMethod === 'WHATSAPP'
+              ? {
+                  instructions:
+                    'Silakan konfirmasi & selesaikan pembayaran melalui WhatsApp Resmi Pasti Murahnya (+6285141784243). Anda juga dapat mengunggah bukti transfer di halaman ini.',
+                  maxProofBytes: payCfg.proofMaxBytes,
+                }
+              : null,
       payment: latestPayment
         ? {
             id: latestPayment.id,
@@ -948,8 +965,14 @@ export class OrdersController {
     @UploadedFile() file: Express.Multer.File | undefined,
   ) {
     const order = await this.verifyGuestOrderAccess(orderNumber, key);
-    if (order.paymentMethod !== 'BANK_TRANSFER' && order.paymentMethod !== 'QRIS_STATIC') {
-      throw new BadRequestException('Unggah bukti pembayaran hanya untuk Transfer Bank atau QRIS manual.');
+    if (
+      order.paymentMethod !== 'BANK_TRANSFER' &&
+      order.paymentMethod !== 'QRIS_STATIC' &&
+      order.paymentMethod !== 'WHATSAPP'
+    ) {
+      throw new BadRequestException(
+        'Unggah bukti pembayaran hanya untuk Transfer Bank, QRIS manual, atau Pembayaran WhatsApp.',
+      );
     }
     if (!['UNPAID', 'PENDING_REVIEW'].includes(order.paymentStatus)) {
       throw new ConflictException('Status pesanan ini tidak lagi menerima bukti pembayaran baru.');

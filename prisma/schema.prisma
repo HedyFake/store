@@ -42,6 +42,7 @@ enum PaymentMethod {
   QRIS_GATEWAY
   VIRTUAL_ACCOUNT
   COD
+  WHATSAPP
 }
 
 enum OrderStatus {
@@ -201,9 +202,13 @@ model Product {
   categoryId     String?
   category       Category?        @relation(fields: [categoryId], references: [id], onDelete: SetNull)
   status         ProductStatus    @default(DRAFT)
-  salePrice      Int
-  compareAtPrice Int?
-  currency       String           @default("IDR")
+  salePrice       Int
+  compareAtPrice  Int?
+  costPrice       Int              @default(0)
+  packagingCost   Int              @default(0)
+  otherCost       Int              @default(0)
+  shippingSubsidy Int              @default(0)
+  currency        String           @default("IDR")
   weightGram     Int              @default(0)
   lengthCm       Int?
   widthCm        Int?

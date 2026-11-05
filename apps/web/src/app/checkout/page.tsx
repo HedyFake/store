@@ -7,6 +7,7 @@ import {
   AlertCircle,
   Lock,
   MapPin,
+  MessageCircle,
   Minus,
   Plus,
   Search,
@@ -14,7 +15,7 @@ import {
   Trash2,
   Truck,
 } from 'lucide-react';
-import { formatRupiah, paymentMethodLabel, type PaymentMethod } from '@store/shared';
+import { formatRupiah, paymentMethodLabel, waApiSendLink, type PaymentMethod } from '@store/shared';
 import { apiFetch } from '@/lib/api';
 import { useStore } from '@/components/store-provider';
 import { StorefrontShell } from '@/components/storefront-shell';
@@ -262,6 +263,18 @@ export default function CheckoutPage() {
         grandTotal: res.grandTotal,
       });
       clearSelectedCart();
+
+      if (paymentMethod === 'WHATSAPP') {
+        const itemsDesc = selectedItems
+          .map((i) => `${i.name}${i.variantName ? ` (${i.variantName})` : ''} x${i.quantity}`)
+          .join(', ');
+        const waText = `Halo kak, saya mau beli barang ini: ${itemsDesc} (No. Pesanan: ${res.orderNumber}) — Total Pembayaran: ${formatRupiah(res.grandTotal)} — Penerima: ${recipientName} (${phone}), Alamat: ${addressLine}, ${district}, ${city}, ${province}`;
+        const waUrl =
+          waApiSendLink(config?.store.whatsappNumber || '6285141784243', waText) ??
+          `https://api.whatsapp.com/send/?phone=6285141784243&text=${encodeURIComponent(waText)}&type=phone_number&app_absent=0`;
+        window.open(waUrl, '_blank', 'noopener,noreferrer');
+      }
+
       showToast(`Pesanan ${res.orderNumber} berhasil dibuat`, 'success');
       router.push(res.trackingPath);
     } catch (err) {
@@ -763,6 +776,34 @@ export default function CheckoutPage() {
                     Metode Pembayaran Pilihan
                   </span>
 
+                  {/* WhatsApp Direct Payment */}
+                  <label
+                    className={`p-3 rounded-xl border flex items-start gap-3 cursor-pointer ${
+                      paymentMethod === 'WHATSAPP'
+                        ? 'border-evergreen bg-evergreen-soft/30 ring-1 ring-evergreen'
+                        : 'border-border/60'
+                    }`}
+                  >
+                    <input
+                      type="radio"
+                      name="paymentMethod"
+                      value="WHATSAPP"
+                      checked={paymentMethod === 'WHATSAPP'}
+                      onChange={() => setPaymentMethod('WHATSAPP')}
+                      className="mt-1"
+                    />
+                    <div className="text-xs">
+                      <span className="font-bold text-evergreen flex items-center gap-1.5">
+                        <MessageCircle className="w-3.5 h-3.5" />
+                        <span>Pembayaran Lewat WhatsApp (+62 851-4178-4243)</span>
+                      </span>
+                      <span className="text-ink-muted text-[11px]">
+                        Pesanan tercatat otomatis &amp; langsung terhubung ke chat WhatsApp Admin
+                        sesuai judul dan rincian barang yang dibeli.
+                      </span>
+                    </div>
+                  </label>
+
                   {/* Bank Transfer */}
                   <label
                     className={`p-3 rounded-xl border flex items-start gap-3 cursor-pointer ${
@@ -916,10 +957,38 @@ export default function CheckoutPage() {
                 >
                   <span className="inline-flex items-center gap-2">
                     <Lock className="w-4 h-4 text-accent" />
-                    <span>{submitting ? 'Memproses Pesanan...' : 'Buat Pesanan Aman'}</span>
+                    <span>
+                      {submitting
+                        ? 'Memproses Pesanan...'
+                        : paymentMethod === 'WHATSAPP'
+                          ? 'Buat Pesanan & Lanjut ke WhatsApp'
+                          : 'Buat Pesanan Aman'}
+                    </span>
                   </span>
                   <span className="font-bold">{formatRupiah(grandTotal)}</span>
                 </button>
+
+                {selectedItems.length > 0 && (
+                  <a
+                    href={
+                      waApiSendLink(
+                        config?.store.whatsappNumber || '6285141784243',
+                        `Halo kak, saya mau beli barang ini: ${selectedItems
+                          .map(
+                            (i) =>
+                              `${i.name}${i.variantName ? ` (${i.variantName})` : ''} x${i.quantity}`,
+                          )
+                          .join(', ')} — Total: ${formatRupiah(grandTotal)}`,
+                      ) ?? '#'
+                    }
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="w-full py-3 px-4 rounded-xl bg-evergreen text-white text-xs font-bold flex items-center justify-center gap-2 hover:opacity-95 transition-opacity"
+                  >
+                    <MessageCircle className="w-4 h-4" />
+                    <span>Chat / Bayar Langsung via WhatsApp (+6285141784243)</span>
+                  </a>
+                )}
 
                 <div className="flex items-center gap-2 text-[11px] text-ink-muted justify-center">
                   <ShieldCheck className="w-4 h-4 text-evergreen" />

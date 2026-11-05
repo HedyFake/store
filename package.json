@@ -16,11 +16,13 @@
     "seed": "tsx prisma/seed.ts"
   },
   "scripts": {
+    "start": "node scripts/start-all.mjs",
     "dev": "node scripts/start-all.mjs",
     "build:shared": "npm run build -w @store/shared",
     "build": "npm run build:shared && npm run build -w @store/api && npm run build -w @store/web",
     "dev:api": "npm run dev -w @store/api",
     "dev:web": "npm run dev -w @store/web",
+    "start:web": "npm run start -w @store/web",
     "dev:db": "node scripts/dev-db.mjs",
     "db:generate": "prisma generate",
     "db:migrate": "prisma migrate deploy",

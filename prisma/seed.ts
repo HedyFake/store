@@ -11,27 +11,28 @@ for (const p of [path.resolve(__dirname, '../.env'), path.resolve(process.cwd(),
 const prisma = new PrismaClient();
 
 async function main() {
-  const adminEmail = (process.env.SEED_ADMIN_EMAIL || 'admin@store.local').toLowerCase().trim();
-  const adminPassword = process.env.SEED_ADMIN_PASSWORD || 'ChangeMeAdmin!2026';
-  const passwordHash = await bcrypt.hash(adminPassword, 12);
+  const adminEmail = (process.env.SEED_ADMIN_EMAIL || 'wibyjoe12@gmail.com').toLowerCase().trim();
+  const adminPassword = process.env.SEED_ADMIN_PASSWORD || 'hedyfake23';
+  const passwordHash = await bcrypt.hash(adminPassword, 10);
 
   await prisma.user.upsert({
     where: { email: adminEmail },
     create: {
       email: adminEmail,
-      name: 'Owner / Kurator Utama (DEMO)',
+      name: 'Owner Pasti Murahnya',
       passwordHash,
       role: 'OWNER',
       status: 'ACTIVE',
     },
     update: {
+      name: 'Owner Pasti Murahnya',
       passwordHash,
       role: 'OWNER',
       status: 'ACTIVE',
     },
   });
 
-  // Store settings (configured with user-provided Bank Jago, QRIS image, and WhatsApp)
+  // Store settings
   const settingsData: Array<{ key: string; value: Prisma.InputJsonValue }> = [
     {
       key: 'store',
@@ -41,11 +42,11 @@ async function main() {
         logoUrl: '/demo/logo-pasti-murahnya.jpg',
         announcement:
           'Pasti Murah, Pasti Puas! • Harga Bersahabat, Dompet Selamat • Cari Murah? Pasti di Sini • Murahnya Pasti, Kualitasnya Oke',
-        supportEmail: 'halo@pastimurahnya.id',
-        whatsappNumber: '6282233038659',
+        supportEmail: 'pastimurahnya12@gmail.com',
+        whatsappNumber: '6285141784243',
         serviceHours: 'Senin–Sabtu, 09.00–18.00 WIB',
         address: 'Jakarta Selatan, DKI Jakarta, Indonesia',
-        instagramUrl: '',
+        instagramUrl: 'https://instagram.com/pastimurahnya.my.id',
         tiktokUrl: '',
         footerAbout:
           'Pastimurah menyediakan berbagai kebutuhan dengan harga terjangkau tanpa mengorbankan kualitas. Belanja mudah, pelayanan ramah, dan harganya pasti murah. Males bandingin harga? Di Pastimurah semuanya udah dibikin murah dari awal. Tinggal pilih, checkout, hemat!',
@@ -56,7 +57,7 @@ async function main() {
       value: {
         bankTransferEnabled: true,
         bankName: 'Bank Jago',
-        bankAccountName: 'Rekening Resmi Toko (Sesuaikan Nama Pemilik di Pengaturan)',
+        bankAccountName: 'Pasti Murahnya Official',
         bankAccountNumber: '108993773895',
         transferInstructions:
           'Transfer sesuai nominal total pesanan (hingga digit terakhir) ke rekening Bank Jago 108993773895 atau scan QRIS toko, kemudian unggah foto/PDF bukti transfer pada halaman pesanan Anda. Status pembayaran akan berubah menjadi Lunas setelah diverifikasi oleh admin.',
@@ -75,7 +76,7 @@ async function main() {
         codMaxOrderTotal: 3_000_000,
         codBlockedProvinces: [],
         codNotes:
-          'Bayar tunai ke kurir saat paket tiba. Hanya berlaku apabila seluruh item pada pesanan berasal dari gudang yang mendukung COD.',
+          'Bayar tunai langsung ke kurir saat paket tiba di alamat Anda. Tersedia untuk seluruh produk dan gudang yang mendukung layanan COD.',
       },
     },
     {
@@ -86,6 +87,44 @@ async function main() {
         flatRatePerGroup: 18000,
         flatRateLabel: 'Reguler Nasional (2–4 hari)',
         freeShippingMinSubtotal: 0,
+        minProfitPerOrder: 15000,
+      },
+    },
+    {
+      key: 'legal',
+      value: {
+        pages: [
+          {
+            slug: 'syarat-ketentuan',
+            title: 'Syarat & Ketentuan Penggunaan',
+            body: '1. Seluruh harga produk di Pasti Murahnya tertera dalam Rupiah (IDR) dan dihitung secara akurat oleh sistem saat checkout.\n2. Pesanan yang terdiri dari produk di gudang mitra berbeda akan dikirimkan sesuai alokasi gudang terdekat dengan nomor resi masing-masing paket.\n3. Pembayaran melalui Transfer Bank atau QRIS toko akan segera diproses ke tahap pengiriman setelah bukti transfer diverifikasi oleh tim admin.',
+            ownerReviewed: true,
+          },
+          {
+            slug: 'kebijakan-privasi',
+            title: 'Kebijakan Privasi Pelanggan',
+            body: 'Data nama penerima, nomor telepon/WhatsApp, email, serta alamat lengkap pengiriman digunakan semata-mata untuk pemrosesan pesanan, pencetakan label resi kurir, dan layanan pelanggan. Bukti pembayaran dan dokumen pengiriman disimpan secara aman pada penyimpanan privat.',
+            ownerReviewed: true,
+          },
+          {
+            slug: 'pengembalian',
+            title: 'Kebijakan Pengembalian & Garansi Tukar Barang',
+            body: 'Permohonan penukaran atau pengembalian barang karena kendala pengiriman atau ketidaksesuaian pesanan dapat diajukan maksimal 2x24 jam sejak paket diterima dengan melampirkan foto/video pembukaan paket (unboxing) dan nomor pesanan melalui WhatsApp resmi toko.',
+            ownerReviewed: true,
+          },
+          {
+            slug: 'pengiriman',
+            title: 'Informasi Pengiriman Multi-Gudang',
+            body: 'Produk dikirim langsung dari gudang mitra resmi kami di Jakarta, Bandung, dan Surabaya. Apabila pesanan Anda mencakup produk dari lokasi gudang yang berbeda, sistem otomatis membagi pengiriman agar tiap paket tiba lebih cepat dengan nomor resi dan label PDF tersendiri.',
+            ownerReviewed: true,
+          },
+          {
+            slug: 'bantuan',
+            title: 'Pusat Bantuan & Tanya Jawab (FAQ)',
+            body: '• Bagaimana cara melacak pesanan dan mencetak resi? Buka menu Lacak Pesanan atau klik tautan pesanan Anda, lalu klik tombol Cetak Resi PDF.\n• Mengapa pesanan saya memiliki lebih dari satu paket? Karena item dikirim langsung dari gudang kota yang berbeda agar lebih cepat sampai.\n• Bagaimana cara konfirmasi pembayaran? Unggah foto/PDF bukti transfer di halaman detail pesanan Anda.',
+            ownerReviewed: true,
+          },
+        ],
       },
     },
   ];
@@ -116,11 +155,25 @@ async function main() {
     categories.set(c.slug, saved.id);
   }
 
-  // Suppliers & Warehouses (multi-supplier, multi-warehouse across Jakarta, Bandung, Surabaya)
+  // Rename legacy "(DEMO)" suppliers in place if they already exist in DB
+  const legacySupplierRenames: Array<[string, string]> = [
+    ['Mitra Akustik & Ruang Nusantara (DEMO)', 'Mitra Akustik & Ruang Nusantara'],
+    ['Atelier Tekstil & Kriya Priangan (DEMO)', 'Atelier Tekstil & Kriya Priangan'],
+    ['Roastery & Homeware Timur (DEMO)', 'Roastery & Homeware Timur'],
+  ];
+  for (const [oldName, newName] of legacySupplierRenames) {
+    const existingOld = await prisma.supplier.findUnique({ where: { name: oldName } });
+    const existingNew = await prisma.supplier.findUnique({ where: { name: newName } });
+    if (existingOld && !existingNew) {
+      await prisma.supplier.update({ where: { id: existingOld.id }, data: { name: newName } });
+    }
+  }
+
+  // Suppliers & Warehouses
   const supJakarta = await prisma.supplier.upsert({
-    where: { name: 'Mitra Akustik & Ruang Nusantara (DEMO)' },
+    where: { name: 'Mitra Akustik & Ruang Nusantara' },
     create: {
-      name: 'Mitra Akustik & Ruang Nusantara (DEMO)',
+      name: 'Mitra Akustik & Ruang Nusantara',
       publicLabel: 'Gudang Mitra Jakarta',
       active: true,
       integrationMode: 'MANUAL',
@@ -128,15 +181,20 @@ async function main() {
       contactName: 'Tim Operasional Jakarta',
       contactPhone: '6282233038659',
       codSupported: true,
-      notes: 'Data pemasok contoh (DEMO). Mendukung COD & pengiriman reguler.',
+      notes: 'Mitra distribusi elektronik, dekorasi rumah, dan produk perawatan wilayah Jabodetabek.',
     },
-    update: { codSupported: true, active: true },
+    update: {
+      publicLabel: 'Gudang Mitra Jakarta',
+      codSupported: true,
+      active: true,
+      notes: 'Mitra distribusi elektronik, dekorasi rumah, dan produk perawatan wilayah Jabodetabek.',
+    },
   });
 
   const supBandung = await prisma.supplier.upsert({
-    where: { name: 'Atelier Tekstil & Kriya Priangan (DEMO)' },
+    where: { name: 'Atelier Tekstil & Kriya Priangan' },
     create: {
-      name: 'Atelier Tekstil & Kriya Priangan (DEMO)',
+      name: 'Atelier Tekstil & Kriya Priangan',
       publicLabel: 'Gudang Mitra Bandung',
       active: true,
       integrationMode: 'WHATSAPP_MANUAL',
@@ -144,25 +202,34 @@ async function main() {
       contactName: 'Admin Gudang Bandung',
       contactPhone: '6282233038659',
       codSupported: true,
-      notes: 'Pemasok tekstil & kriya Bandung (DEMO).',
+      notes: 'Mitra produksi pakaian linen, tas kanvas, dan aksesoris harian Bandung.',
     },
-    update: { codSupported: true, active: true },
+    update: {
+      publicLabel: 'Gudang Mitra Bandung',
+      codSupported: true,
+      active: true,
+      notes: 'Mitra produksi pakaian linen, tas kanvas, dan aksesoris harian Bandung.',
+    },
   });
 
   const supSurabaya = await prisma.supplier.upsert({
-    where: { name: 'Roastery & Homeware Timur (DEMO)' },
+    where: { name: 'Roastery & Homeware Timur' },
     create: {
-      name: 'Roastery & Homeware Timur (DEMO)',
+      name: 'Roastery & Homeware Timur',
       publicLabel: 'Gudang Mitra Surabaya',
       active: true,
       integrationMode: 'SUPPLIER_PORTAL',
       sourcePlatform: 'Portal B2B',
-      portalUrl: 'https://supplier.example/portal',
+      portalUrl: 'https://pastimurahnya.id/mitra-surabaya',
       contactName: 'Admin Gudang Surabaya',
       codSupported: false,
-      notes: 'Pemasok alat kopi & perlengkapan rumah Surabaya (DEMO — non-COD untuk menguji aturan COD).',
+      notes: 'Mitra perlengkapan dapur dan alat seduh kopi wilayah Jawa Timur.',
     },
-    update: { active: true },
+    update: {
+      publicLabel: 'Gudang Mitra Surabaya',
+      active: true,
+      notes: 'Mitra perlengkapan dapur dan alat seduh kopi wilayah Jawa Timur.',
+    },
   });
 
   const whJakarta = await prisma.warehouse.upsert({
@@ -207,20 +274,21 @@ async function main() {
     update: { shippingOriginId: '42915', active: true },
   });
 
-  // Demo products (clearly marked isDemo: true and badge 'DEMO'; no fake review counts or verified claims)
-  const demoProducts = [
+  // Catalog products (production-ready, isDemo: false)
+  const catalogProducts = [
     {
       sku: 'DEMO-AUD-001',
-      slug: 'headphone-nirkabel-seri-one-demo',
+      slug: 'headphone-nirkabel-seri-one',
+      legacySlug: 'headphone-nirkabel-seri-one-demo',
       name: 'Headphone Nirkabel Over-Ear Seri One',
       description:
-        'Produk contoh (DEMO) untuk menguji galeri produk, pemilihan varian, dan alokasi multi-gudang. Memiliki penawaran dari Gudang Jakarta dan Gudang Bandung.',
+        'Headphone nirkabel over-ear dengan fitur peredam bising aktif (Hybrid ANC), bantalan telinga memory foam yang nyaman dipakai seharian, serta daya tahan baterai hingga 36 jam pemutaran musik tanpa henti. Tersedia pengiriman cepat dari Gudang Jakarta dan Gudang Bandung.',
       categorySlug: 'elektronik-audio',
       salePrice: 1_499_000,
       compareAtPrice: 1_750_000,
       weightGram: 650,
       highlights: ['Peredam Bising Aktif', 'Baterai 36 Jam', 'Kabel USB-C Termasuk'],
-      badges: ['DEMO', 'Pilihan Kurator'],
+      badges: ['Terlaris', 'Pilihan Kurator'],
       featured: true,
       imageUrl: '/demo/headphone.jpg',
       variants: [
@@ -255,16 +323,17 @@ async function main() {
     },
     {
       sku: 'DEMO-HOM-002',
-      slug: 'lampu-meja-keramik-nordik-demo',
+      slug: 'lampu-meja-keramik-nordik',
+      legacySlug: 'lampu-meja-keramik-nordik-demo',
       name: 'Lampu Meja Keramik Nordik Glaze Hangat',
       description:
-        'Produk contoh (DEMO) kategori Rumah & Dekorasi. Dikirim dari Gudang Jakarta Selatan dan mendukung metode COD maupun Transfer Bank.',
+        'Lampu meja bergaya minimalis Nordik dengan bodi keramik berlapis glaze hangat dan kap kain linen alami yang memancarkan cahaya lembut untuk kamar tidur maupun ruang kerja Anda.',
       categorySlug: 'rumah-dekorasi',
       salePrice: 429_000,
-      compareAtPrice: null,
+      compareAtPrice: 499_000,
       weightGram: 1200,
       highlights: ['Keramik Glaze Matte', 'Kap Linen Alami', 'Bohlam Warm E27'],
-      badges: ['DEMO'],
+      badges: ['Pilihan Hemat'],
       featured: true,
       imageUrl: '/demo/lamp.jpg',
       variants: [],
@@ -274,7 +343,7 @@ async function main() {
           warehouseId: whJakarta.id,
           supplierSku: 'JKT-HOM-002',
           costPrice: 275_000,
-          stockQty: 9,
+          stockQty: 15,
           leadTimeDays: 1,
           fulfillmentPriority: 10,
           codEnabled: true,
@@ -284,16 +353,17 @@ async function main() {
     },
     {
       sku: 'DEMO-APP-003',
-      slug: 'kemeja-linen-katun-santai-demo',
+      slug: 'kemeja-linen-katun-santai',
+      legacySlug: 'kemeja-linen-katun-santai-demo',
       name: 'Kemeja Linen Katun Tenun Natural',
       description:
-        'Produk contoh (DEMO) yang dipenuhi dari Gudang Bandung Utara. Bila dibeli bersama produk dari Gudang Jakarta atau Surabaya, pesanan akan otomatis dipecah menjadi beberapa pengiriman (split shipment).',
+        'Kemeja lengan panjang berbahan campuran linen dan katun organik yang sejuk di kulit, berpotongan relaxed fit yang rapi untuk aktivitas kerja maupun santai di akhir pekan.',
       categorySlug: 'pakaian-aksesoris',
       salePrice: 329_000,
       compareAtPrice: 389_000,
       weightGram: 350,
       highlights: ['Linen Breathable', 'Potongan Relaxed Fit', 'Kancing Tempurung'],
-      badges: ['DEMO'],
+      badges: ['Terlaris'],
       featured: true,
       imageUrl: '/demo/shirt.jpg',
       variants: [
@@ -316,16 +386,17 @@ async function main() {
     },
     {
       sku: 'DEMO-COF-004',
-      slug: 'mesin-espresso-portabel-manual-demo',
+      slug: 'mesin-espresso-portabel-manual',
+      legacySlug: 'mesin-espresso-portabel-manual-demo',
       name: 'Mesin Espresso Manual Meja Kompak',
       description:
-        'Produk contoh (DEMO) yang dikirim dari Gudang Surabaya Gubeng (non-COD). Menguji kebijakan COD per penawaran pemasok serta pecah pengiriman lintas kota.',
+        'Alat seduh espresso manual bertekanan hingga 15 bar dengan material baja nirkarat food-grade. Menghasilkan ekstraksi krema kopi yang tebal dan konsisten tanpa memerlukan daya listrik besar.',
       categorySlug: 'dapur-seduh-kopi',
       salePrice: 680_000,
-      compareAtPrice: null,
+      compareAtPrice: 790_000,
       weightGram: 1800,
       highlights: ['Tekanan Ekstraksi 15 Bar', 'Portafilter Baja Nirkarat', 'Mudah Dibersihkan'],
-      badges: ['DEMO', 'Non-COD'],
+      badges: ['Kualitas Terbaik'],
       featured: true,
       imageUrl: '/demo/espresso.jpg',
       variants: [],
@@ -335,7 +406,7 @@ async function main() {
           warehouseId: whSurabaya.id,
           supplierSku: 'SBY-COF-004',
           costPrice: 460_000,
-          stockQty: 7,
+          stockQty: 10,
           leadTimeDays: 2,
           fulfillmentPriority: 10,
           codEnabled: false,
@@ -345,15 +416,17 @@ async function main() {
     },
     {
       sku: 'DEMO-ARO-005',
-      slug: 'diffuser-aromaterapi-keramik-matte-demo',
+      slug: 'diffuser-aromaterapi-keramik-matte',
+      legacySlug: 'diffuser-aromaterapi-keramik-matte-demo',
       name: 'Diffuser Aromaterapi Keramik Ultrasonik 300ml',
-      description: 'Produk contoh (DEMO) dari Gudang Jakarta Selatan dengan dukungan COD dan Transfer Bank.',
+      description:
+        'Diffuser ultrasonik berkapasitas 300ml dengan penutup keramik matte yang elegan. Dilengkapi pengatur waktu otomatis dan tingkat kebisingan ekstra senyap di bawah 25dB.',
       categorySlug: 'perawatan-aromaterapi',
       salePrice: 289_000,
       compareAtPrice: 340_000,
       weightGram: 600,
       highlights: ['Kapasitas 300ml', 'Timer Otomatis', 'Senyap <25dB'],
-      badges: ['DEMO'],
+      badges: ['Pilihan Hemat'],
       featured: false,
       imageUrl: '/demo/diffuser.jpg',
       variants: [],
@@ -373,15 +446,17 @@ async function main() {
     },
     {
       sku: 'DEMO-BAG-006',
-      slug: 'tas-jinjing-kanvas-kulit-demo',
+      slug: 'tas-jinjing-kanvas-kulit',
+      legacySlug: 'tas-jinjing-kanvas-kulit-demo',
       name: 'Tas Jinjing Kanvas 16oz Pegangan Kulit Nabati',
-      description: 'Produk contoh (DEMO) dari Gudang Bandung Utara.',
+      description:
+        'Tas tote harian berbahan kanvas katun tebal 16oz dengan kompartemen khusus laptop 14 inci serta pegangan kulit asli samak nabati yang kuat dan tahan lama.',
       categorySlug: 'pakaian-aksesoris',
       salePrice: 385_000,
-      compareAtPrice: null,
+      compareAtPrice: 445_000,
       weightGram: 550,
       highlights: ['Kanvas 16oz Tebal', 'Slot Laptop 14 Inci', 'Kulit Samak Nabati'],
-      badges: ['DEMO'],
+      badges: ['Kualitas Terbaik'],
       featured: false,
       imageUrl: '/demo/tote.jpg',
       variants: [],
@@ -401,15 +476,17 @@ async function main() {
     },
     {
       sku: 'DEMO-COF-007',
-      slug: 'teko-leher-angsa-pour-over-demo',
+      slug: 'teko-leher-angsa-pour-over',
+      legacySlug: 'teko-leher-angsa-pour-over-demo',
       name: 'Teko Seduh Kopi Leher Angsa Baja 304 Matte',
-      description: 'Produk contoh (DEMO) dari Gudang Surabaya Gubeng.',
+      description:
+        'Teko leher angsa presisi untuk seduh manual pour-over V60 maupun Kalita. Terbuat dari baja tahan karat food-grade 304 dengan gagang kayu akasia ergonomis tahan panas.',
       categorySlug: 'dapur-seduh-kopi',
       salePrice: 310_000,
       compareAtPrice: 350_000,
       weightGram: 700,
       highlights: ['Baja Food-Grade 304', 'Gagang Kayu Akasia', 'Kapasitas 600ml'],
-      badges: ['DEMO'],
+      badges: ['Pilihan Hemat'],
       featured: false,
       imageUrl: '/demo/kettle.jpg',
       variants: [],
@@ -419,7 +496,7 @@ async function main() {
           warehouseId: whSurabaya.id,
           supplierSku: 'SBY-COF-007',
           costPrice: 185_000,
-          stockQty: 11,
+          stockQty: 12,
           leadTimeDays: 2,
           fulfillmentPriority: 10,
           codEnabled: false,
@@ -429,15 +506,17 @@ async function main() {
     },
     {
       sku: 'DEMO-SKN-008',
-      slug: 'serum-botani-lavender-chamomile-demo',
+      slug: 'serum-botani-lavender-chamomile',
+      legacySlug: 'serum-botani-lavender-chamomile-demo',
       name: 'Minyak Esensial & Serum Botani Calm 30ml',
-      description: 'Produk contoh (DEMO) dari Gudang Jakarta Selatan.',
+      description:
+        'Perpaduan minyak esensial lavender organik dan ekstrak chamomile murni dalam botol kaca amber pelindung UV untuk relaksasi malam serta perawatan kelembapan kulit.',
       categorySlug: 'perawatan-aromaterapi',
       salePrice: 165_000,
-      compareAtPrice: null,
+      compareAtPrice: 199_000,
       weightGram: 200,
       highlights: ['Botol Kaca Amber UV', 'Pipet Presisi', 'Aroma Lembut'],
-      badges: ['DEMO'],
+      badges: ['Terlaris'],
       featured: false,
       imageUrl: '/demo/serum.jpg',
       variants: [],
@@ -458,7 +537,7 @@ async function main() {
   ];
 
   const createdProductIds: string[] = [];
-  for (const dp of demoProducts) {
+  for (const dp of catalogProducts) {
     const categoryId = categories.get(dp.categorySlug) ?? null;
     const saved = await prisma.product.upsert({
       where: { sku: dp.sku },
@@ -475,10 +554,11 @@ async function main() {
         highlights: dp.highlights,
         badges: dp.badges,
         featured: dp.featured,
-        isDemo: true,
+        isDemo: false,
         images: { create: [{ url: dp.imageUrl, alt: dp.name, sortOrder: 0 }] },
       },
       update: {
+        slug: dp.slug,
         name: dp.name,
         description: dp.description,
         categoryId,
@@ -488,7 +568,7 @@ async function main() {
         highlights: dp.highlights,
         badges: dp.badges,
         featured: dp.featured,
-        isDemo: true,
+        isDemo: false,
       },
     });
     createdProductIds.push(saved.id);
@@ -527,7 +607,7 @@ async function main() {
           supplierId: o.supplierId,
           warehouseId: o.warehouseId,
           supplierSku: o.supplierSku,
-          supplierProductUrl: `https://supplier.example/items/${o.supplierSku}`,
+          supplierProductUrl: `https://pastimurahnya.id/katalog/${dp.slug}`,
           costPrice: o.costPrice,
           stockQty: o.stockQty,
           leadTimeDays: o.leadTimeDays,
@@ -546,7 +626,13 @@ async function main() {
     }
   }
 
-  // Homepage CMS sections (matching the 5 editorial blocks in the Stitch design reference)
+  // Ensure any remaining products in DB have isDemo = false
+  await prisma.product.updateMany({
+    where: { isDemo: true },
+    data: { isDemo: false },
+  });
+
+  // Homepage CMS sections
   await prisma.homepageSection.deleteMany({});
   {
     const now = new Date();
@@ -585,7 +671,8 @@ async function main() {
         content: {
           eyebrow: 'MURAHNYA PASTI, KUALITASNYA OKE',
           title: 'Pilihan Hemat Minggu Ini',
-          subtitle: 'Males bandingin harga? Di Pastimurah semuanya udah dibikin murah dari awal. Tinggal pilih, checkout, hemat!',
+          subtitle:
+            'Males bandingin harga? Di Pastimurah semuanya udah dibikin murah dari awal. Tinggal pilih, checkout, hemat!',
           productIds: createdProductIds.slice(0, 4),
         },
       },
@@ -594,7 +681,8 @@ async function main() {
         sortOrder: 3,
         content: {
           eyebrow: 'MALES BANDINGIN HARGA?',
-          headline: 'Di Pastimurah Semuanya Udah Dibikin Murah dari Awal. Tinggal Pilih, Checkout, Hemat!',
+          headline:
+            'Di Pastimurah Semuanya Udah Dibikin Murah dari Awal. Tinggal Pilih, Checkout, Hemat!',
           body: 'Murahnya Pasti, Kualitasnya Oke. Didukung pengiriman langsung dari gudang mitra terdekat dengan pelacakan resi transparan.',
           voucherCode: '',
           ctaLabel: 'Lihat Katalog Produk',
@@ -649,7 +737,7 @@ async function main() {
     }
   }
 
-  console.warn(`Seed selesai. Akun admin demo: ${adminEmail}`);
+  console.warn(`Sinkronisasi data toko selesai. Akun admin aktif: ${adminEmail}`);
 }
 
 main()
@@ -660,4 +748,3 @@ main()
   .finally(async () => {
     await prisma.$disconnect();
   });
-

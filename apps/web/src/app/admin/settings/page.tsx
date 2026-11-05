@@ -46,6 +46,7 @@ interface AdminSettingsResponse {
     flatRatePerGroup: number;
     flatRateLabel: string;
     freeShippingMinSubtotal: number;
+    minProfitPerOrder?: number;
   };
   integrations: {
     paymentGateway: {
@@ -302,7 +303,7 @@ export default function AdminSettingsPage() {
             />
           </div>
         </div>
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
           <div>
             <label className="font-semibold block mb-1">Alamat Toko</label>
             <input
@@ -311,6 +312,18 @@ export default function AdminSettingsPage() {
               onChange={(e) =>
                 setData({ ...data, store: { ...data.store, address: e.target.value } })
               }
+              className="w-full h-9 px-3 rounded-lg bg-surface-low border border-border/60"
+            />
+          </div>
+          <div>
+            <label className="font-semibold block mb-1">URL Instagram (@pastimurahnya.my.id)</label>
+            <input
+              type="text"
+              value={data.store.instagramUrl ?? ''}
+              onChange={(e) =>
+                setData({ ...data, store: { ...data.store, instagramUrl: e.target.value } })
+              }
+              placeholder="https://instagram.com/pastimurahnya.my.id"
               className="w-full h-9 px-3 rounded-lg bg-surface-low border border-border/60"
             />
           </div>
@@ -494,8 +507,10 @@ export default function AdminSettingsPage() {
           }}
           className="bg-surface rounded-2xl p-6 border border-border/50 space-y-4 text-xs"
         >
-          <h2 className="font-serif text-lg text-primary">Kalkulasi Ongkir &amp; Fallback</h2>
-          <div className="grid grid-cols-2 gap-3">
+          <h2 className="font-serif text-lg text-primary">
+            Kalkulasi Ongkir Agregator &amp; Target Laba Minimal
+          </h2>
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
             <div>
               <label className="font-semibold block mb-1">Mode Kalkulasi Ongkir</label>
               <select
@@ -528,6 +543,24 @@ export default function AdminSettingsPage() {
                   })
                 }
                 className="w-full h-9 px-3 rounded-lg bg-surface-low border border-border/60"
+              />
+            </div>
+            <div>
+              <label className="font-semibold block mb-1">
+                Target Laba Minimal / Pesanan (IDR)
+              </label>
+              <input
+                type="number"
+                min={0}
+                step={1000}
+                value={data.shipping.minProfitPerOrder ?? 15000}
+                onChange={(e) =>
+                  setData({
+                    ...data,
+                    shipping: { ...data.shipping, minProfitPerOrder: Number(e.target.value) },
+                  })
+                }
+                className="w-full h-9 px-3 rounded-lg bg-surface-low border border-border/60 font-bold text-primary"
               />
             </div>
           </div>

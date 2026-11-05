@@ -155,12 +155,7 @@ export function AdminShell({
         <header className="bg-surface border-b border-border/50 px-6 py-3.5 flex flex-wrap items-center justify-between gap-4">
           <div className="flex items-center gap-3 text-xs text-ink-muted">
             <FileSpreadsheet className="w-4 h-4 text-accent-ink" />
-            <span>Database PostgreSQL Aktif</span>
-            {config?.demoMode && (
-              <span className="px-2 py-0.5 rounded bg-accent-soft text-accent-ink font-bold text-[10px]">
-                MODE DEMO
-              </span>
-            )}
+            <span>Sistem Operasional Aktif</span>
           </div>
 
           <div className="flex items-center gap-3">

@@ -15,3 +15,12 @@ export function waLink(number: string | null | undefined, text?: string): string
   return `https://wa.me/${n}${text ? `?text=${encodeURIComponent(text)}` : ''}`;
 }
 
+export function waApiSendLink(number: string | null | undefined, text?: string): string | null {
+  if (!number) return null;
+  const normalized = normalizeIndoPhone(number) ?? number.replace(/\D/g, '');
+  if (!/^\d{8,15}$/.test(normalized)) return null;
+  const msg = text ?? 'Halo kak, saya mau beli barang ini';
+  return `https://api.whatsapp.com/send/?phone=${normalized}&text=${encodeURIComponent(msg)}&type=phone_number&app_absent=0`;
+}
+
+

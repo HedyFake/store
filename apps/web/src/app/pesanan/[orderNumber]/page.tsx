@@ -25,7 +25,7 @@ import {
   toneForOrderStatus,
   toneForPaymentStatus,
   toneForShipmentStatus,
-  waLink,
+  waApiSendLink,
   type CodCollectionStatus,
   type OrderStatus,
   type PaymentMethod,
@@ -229,7 +229,9 @@ function OrderDetailContent() {
   }
 
   const canUploadProof =
-    (order.paymentMethod === 'BANK_TRANSFER' || order.paymentMethod === 'QRIS_STATIC') &&
+    (order.paymentMethod === 'BANK_TRANSFER' ||
+      order.paymentMethod === 'QRIS_STATIC' ||
+      order.paymentMethod === 'WHATSAPP') &&
     (order.paymentStatus === 'UNPAID' || order.paymentStatus === 'PENDING_REVIEW');
 
   const currentUrl =
@@ -237,10 +239,18 @@ function OrderDetailContent() {
       ? window.location.href
       : `/pesanan/${order.orderNumber}?key=${key}`;
 
-  const whatsappHref = waLink(
-    order.supportWhatsapp,
-    `Halo Admin, saya ingin menanyakan/konfirmasi pesanan ${order.orderNumber} atas nama ${order.recipient.name} (Total: ${formatRupiah(order.totals.grandTotal)}). Tautan pesanan: ${currentUrl}`,
-  );
+  const orderItemsSummary = order.packages
+    .flatMap((pkg) => pkg.items.map((it) => `${it.name}${it.variantName ? ` (${it.variantName})` : ''} x${it.quantity}`))
+    .join(', ');
+
+  const whatsappHref =
+    waApiSendLink(
+      order.supportWhatsapp || '6285141784243',
+      `Halo kak, saya mau beli barang ini: ${orderItemsSummary} (No. Pesanan: ${order.orderNumber}, Penerima: ${order.recipient.name}, Total: ${formatRupiah(order.totals.grandTotal)}). Tautan pesanan: ${currentUrl}`,
+    ) ??
+    `https://api.whatsapp.com/send/?phone=6285141784243&text=${encodeURIComponent(
+      `Halo kak, saya mau beli barang ini: ${orderItemsSummary} (No. Pesanan: ${order.orderNumber}, Total: ${formatRupiah(order.totals.grandTotal)})`,
+    )}&type=phone_number&app_absent=0`;
 
   const allResiDocs = order.packages.flatMap((pkg) =>
     pkg.shipments.flatMap((sh) =>
@@ -258,11 +268,6 @@ function OrderDetailContent() {
         <div className="space-y-1">
           <div className="flex items-center gap-2 flex-wrap">
             <span className="font-mono text-sm font-bold text-primary">{order.orderNumber}</span>
-            {order.isDemo && (
-              <span className="px-2 py-0.5 rounded bg-primary text-white text-[10px] font-bold">
-                TRANSAKSI DEMO
-              </span>
-            )}
             <StatusBadge
               label={orderStatusLabel[order.orderStatus]}
               tone={toneForOrderStatus(order.orderStatus)}
@@ -330,6 +335,27 @@ function OrderDetailContent() {
             <h2 className="font-serif text-xl text-primary">
               Total Tagihan: {formatRupiah(order.totals.grandTotal)}
             </h2>
+
+            {order.paymentMethod === 'WHATSAPP' && (
+              <div className="p-4 rounded-xl bg-evergreen-soft/30 border border-evergreen/40 space-y-2 text-xs">
+                <p className="font-bold text-evergreen">
+                  Pembayaran &amp; Konfirmasi via WhatsApp (+62 851-4178-4243)
+                </p>
+                <p className="text-ink-muted">
+                  Klik tombol di bawah untuk langsung terhubung ke WhatsApp Admin Pasti Murahnya
+                  dengan rincian barang dan total tagihan Anda:
+                </p>
+                <a
+                  href={whatsappHref}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="w-full py-2.5 px-4 rounded-xl bg-evergreen text-white font-bold inline-flex items-center justify-center gap-2 hover:opacity-95"
+                >
+                  <MessageCircle className="w-4 h-4" />
+                  <span>Lanjutkan Pembayaran di WhatsApp (+6285141784243)</span>
+                </a>
+              </div>
+            )}
 
             {order.paymentMethod === 'BANK_TRANSFER' && (
               <div className="p-4 rounded-xl bg-surface-low border border-border/60 space-y-1 text-xs">

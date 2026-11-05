@@ -30,12 +30,21 @@ export const httpUrl = z
   .max(2048)
   .url('URL tidak valid')
   .refine((u) => /^https?:\/\//i.test(u), 'Hanya URL http/https');
-/** Image URLs: absolute http(s) or site-relative path under /demo or /media. Never fetched by server. */
+/** Image or video URLs: absolute http(s) or site-relative path under /demo or /media. Never fetched by server. */
 export const imageUrl = z
   .string()
   .trim()
   .max(2048)
-  .refine((u) => /^https?:\/\//i.test(u) || /^\/(demo|media)\/[A-Za-z0-9._\-/]+$/.test(u), 'URL gambar tidak valid');
+  .refine(
+    (u) => /^https?:\/\//i.test(u) || /^\/(demo|media)\/[A-Za-z0-9._\-/]+$/.test(u),
+    'URL foto/video tidak valid',
+  );
+export const mediaUrl = imageUrl;
+
+export function isVideoMediaUrl(url?: string | null): boolean {
+  if (!url) return false;
+  return /\.(mp4|webm|mov|m4v)(\?.*)?$/i.test(url.trim());
+}
 
 // ── Auth
 export const loginSchema = z.object({
@@ -65,6 +74,7 @@ export const variantInputSchema = z.object({
   id: z.string().uuid().optional(),
   sku,
   name: z.string().trim().min(1).max(80),
+  options: z.record(z.string().trim().max(80)).default({}),
   priceOverride: rupiah.optional().nullable(),
   active: z.boolean().default(true),
   sortOrder: z.number().int().min(0).default(0),
@@ -80,6 +90,10 @@ export const productSchema = z
     status: z.enum(ProductStatuses).default('DRAFT'),
     salePrice: rupiah.refine((v) => v > 0, 'Harga jual harus > 0'),
     compareAtPrice: rupiah.optional().nullable(),
+    costPrice: rupiah.default(0),
+    packagingCost: rupiah.default(0),
+    otherCost: rupiah.default(0),
+    shippingSubsidy: rupiah.default(0),
     weightGram: z.number().int().min(1, 'Berat wajib untuk ongkir').max(100_000),
     lengthCm: z.number().int().min(0).max(500).optional().nullable(),
     widthCm: z.number().int().min(0).max(500).optional().nullable(),
@@ -92,15 +106,30 @@ export const productSchema = z
     seoDescription: z.string().trim().max(300).optional().nullable(),
     images: z
       .array(z.object({ url: imageUrl, alt: z.string().trim().max(160).default('') }))
-      .max(8)
+      .max(3, 'Maksimal 3 foto atau video per produk')
       .default([]),
-    variants: z.array(variantInputSchema).max(30).default([]),
+    variants: z.array(variantInputSchema).max(50).default([]),
   })
   .refine((p) => p.compareAtPrice == null || p.compareAtPrice > p.salePrice, {
     message: 'Harga coret harus lebih besar dari harga jual',
     path: ['compareAtPrice'],
   });
 export type ProductInput = z.infer<typeof productSchema>;
+
+export const profitPreviewRequestSchema = z.object({
+  productId: z.string().uuid().optional().nullable(),
+  salePrice: rupiah,
+  costPrice: rupiah.default(0),
+  packagingCost: rupiah.default(0),
+  otherCost: rupiah.default(0),
+  shippingSubsidy: rupiah.default(0),
+  weightGram: z.number().int().min(1).max(100_000).default(500),
+  originId: z.string().trim().max(40).optional().nullable(),
+  destinationId: z.string().trim().max(40).default('17473'),
+  selectedOptionId: z.string().trim().max(100).optional().nullable(),
+  minProfitTarget: rupiah.optional().nullable(),
+});
+export type ProfitPreviewRequestInput = z.infer<typeof profitPreviewRequestSchema>;
 
 export const catalogQuerySchema = z.object({
   q: z.string().trim().max(100).optional(),
@@ -143,15 +172,21 @@ export const supplierSchema = z.object({
   notes: z.string().trim().max(2000).optional().nullable(),
 });
 
-export const warehouseSchema = z.object({
-  supplierId: z.string().uuid(),
-  name: z.string().trim().min(2).max(120),
-  city: z.string().trim().min(2).max(80),
-  province: z.string().trim().max(80).optional().nullable(),
-  address: z.string().trim().max(500).optional().nullable(),
-  shippingOriginId: z.string().trim().max(40).optional().nullable(),
-  active: z.boolean().default(true),
-});
+export const warehouseSchema = z
+  .object({
+    supplierId: z.string().uuid().optional().nullable(),
+    supplierName: z.string().trim().min(2).max(120).optional().nullable(),
+    name: z.string().trim().min(2).max(120),
+    city: z.string().trim().min(2).max(80),
+    province: z.string().trim().max(80).optional().nullable(),
+    address: z.string().trim().max(500).optional().nullable(),
+    shippingOriginId: z.string().trim().max(40).optional().nullable(),
+    active: z.boolean().default(true),
+  })
+  .refine((w) => Boolean(w.supplierId || (w.supplierName && w.supplierName.trim().length >= 2)), {
+    message: 'Pilih pemasok atau isi nama pemasok sendiri',
+    path: ['supplierName'],
+  });
 
 export const offerSchema = z.object({
   productId: z.string().uuid(),
@@ -358,6 +393,7 @@ export const shippingSettingsSchema = z.object({
   flatRatePerGroup: rupiah.default(0),
   flatRateLabel: z.string().trim().max(60).default('Ongkir standar'),
   freeShippingMinSubtotal: rupiah.default(0), // 0 = disabled
+  minProfitPerOrder: rupiah.default(15000), // Target laba minimal per pesanan (default Rp 15.000)
 });
 
 export const legalPagesSchema = z.object({

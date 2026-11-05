@@ -20,11 +20,6 @@ export default function LegalPolicyPage() {
           <h1 className="font-serif text-3xl text-primary">
             {page?.title || 'Kebijakan & Informasi Layanan'}
           </h1>
-          {page && !page.ownerReviewed && (
-            <span className="inline-block mt-2 px-2.5 py-0.5 rounded bg-accent-soft text-accent-ink text-[11px] font-bold">
-              Draft Kebijakan — Dapat diubah melalui Pengaturan Admin
-            </span>
-          )}
         </div>
         <div className="bg-surface rounded-2xl p-6 sm:p-8 border border-border/40 text-sm text-ink leading-relaxed whitespace-pre-line">
           {page?.body || 'Konten halaman sedang dimuat.'}

@@ -60,19 +60,12 @@ export function StorefrontShell({ children }: { children: React.ReactNode }) {
     <div className="min-h-screen flex flex-col bg-background text-ink">
       {/* Header matching Stitch reference */}
       <header className="sticky top-0 z-40 bg-background/95 backdrop-blur-md border-b border-border/40 shadow-[0_1px_8px_rgba(0,0,0,0.03)]">
-        {(announcement || config?.demoMode) && (
-          <div className="bg-primary-container text-background py-1.5 px-4 text-center text-[11px] font-semibold tracking-widest uppercase flex items-center justify-center gap-3 flex-wrap">
-            {config?.demoMode && (
-              <span className="px-2 py-0.5 rounded bg-accent text-primary font-bold text-[10px]">
-                MODE DEMO
-              </span>
-            )}
-            <span>
-              {announcement ||
-                'Pasti Murah, Pasti Puas! • Belanja Hemat, Tanpa Ragu • Harga Bersahabat, Dompet Selamat • Cari Murah? Pasti di Sini • Murahnya Pasti, Kualitasnya Oke'}
-            </span>
-          </div>
-        )}
+        <div className="bg-primary-container text-background py-1.5 px-4 text-center text-[11px] font-semibold tracking-widest uppercase flex items-center justify-center gap-3 flex-wrap">
+          <span>
+            {announcement ||
+              'Pasti Murah, Pasti Puas! • Belanja Hemat, Tanpa Ragu • Harga Bersahabat, Dompet Selamat • Cari Murah? Pasti di Sini • Murahnya Pasti, Kualitasnya Oke'}
+          </span>
+        </div>
 
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-12 pt-3 pb-2">
           <div className="flex items-center justify-between gap-4 lg:gap-8">
@@ -329,6 +322,9 @@ export function StorefrontShell({ children }: { children: React.ReactNode }) {
                 Metode Pembayaran Aktif
               </p>
               <div className="flex flex-wrap gap-2">
+                <span className="px-2.5 py-1 rounded bg-evergreen-soft text-evergreen border border-evergreen/30 text-[11px] font-semibold">
+                  WhatsApp (+6285141784243)
+                </span>
                 {config?.payment.bankTransferEnabled && (
                   <span className="px-2.5 py-1 rounded bg-surface border border-border/60 text-[11px] font-medium">
                     Transfer {config.payment.bankName || 'Bank'}
@@ -392,11 +388,39 @@ export function StorefrontShell({ children }: { children: React.ReactNode }) {
           </div>
 
           <div className="md:col-span-4 space-y-2.5 text-xs">
-            <p className="font-bold uppercase tracking-wider text-ink mb-3">Kontak &amp; Legal</p>
-            <p className="text-ink-muted">{config?.store.address}</p>
-            {config?.store.supportEmail && (
-              <p className="text-ink-muted">Email: {config.store.supportEmail}</p>
-            )}
+            <p className="font-bold uppercase tracking-wider text-ink mb-3">Kontak &amp; Informasi Lebih Lanjut</p>
+            <p className="text-ink-muted">{config?.store.address || 'Jakarta Selatan, DKI Jakarta, Indonesia'}</p>
+            <p className="text-ink-muted">
+              WhatsApp / Kontak:{' '}
+              <a
+                href="https://api.whatsapp.com/send/?phone=6285141784243&text=Halo+kak%2C+saya+mau+tanya+info+produk&type=phone_number&app_absent=0"
+                target="_blank"
+                rel="noopener noreferrer"
+                className="font-semibold text-evergreen hover:underline"
+              >
+                +6285141784243
+              </a>
+            </p>
+            <p className="text-ink-muted">
+              Gmail / Email:{' '}
+              <a
+                href={`mailto:${config?.store.supportEmail || 'pastimurahnya12@gmail.com'}`}
+                className="font-semibold text-ink hover:underline"
+              >
+                {config?.store.supportEmail || 'pastimurahnya12@gmail.com'}
+              </a>
+            </p>
+            <p className="text-ink-muted">
+              Instagram:{' '}
+              <a
+                href={config?.store.instagramUrl || 'https://instagram.com/pastimurahnya.my.id'}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="font-semibold text-primary hover:underline"
+              >
+                @pastimurahnya.my.id
+              </a>
+            </p>
             <div className="pt-3 flex flex-wrap gap-4 text-ink-muted">
               <Link href="/kebijakan/kebijakan-privasi" className="hover:text-ink underline">
                 Kebijakan Privasi
