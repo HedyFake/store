@@ -42,7 +42,7 @@ fi
 
 if [ "$NEED_NODE" -eq 1 ]; then
   echo "Menginstal Node.js 22.x LTS..."
-  curl -fsSL https://deb.nodesource.com/setup_22.x | $SUDO -E bash -
+  curl -fsSL https://deb.nodesource.com/setup_22.x | sudo -E bash -
   $SUDO apt-get install -y nodejs
 fi
 
